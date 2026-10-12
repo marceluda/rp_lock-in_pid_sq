@@ -8,10 +8,10 @@ replaced by a **square** generator and lock-in like the square part of the origi
 [Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid) App (`gen_mod2`, `sq_ref`/`sq_quad`/`sq_phas`,
 sqX/sqY/sqF), with the reference and quadrature pair up to **31.25 MHz** (125 MHz / 4). Everything else
 (oscilloscope, PIDs, ramp, lock control in the FPGA, Capture Lock, bus fixes, streaming, HTTP remote control)
-is the one of v2.3.18. The square generator, the square lock-in and a real lock at 50 kHz were tested on the board
-(RP2, RedPitaya_OS 2.04-35, builds 2.0.0-5 and 2.0.0-6, `reportes/lock-in_pid_sq.md`); the measured values quoted
-for the common instruments that were not measured again come from the tests of lock_in+pid_harmonic and are said so.
-A lock **at 31.25 MHz has not been tested yet** (a confirmar, see [below](#square-lock-in-amplifier)).
+is the one of v2.3.18. The square generator, the square lock-in and real locks at 50 kHz and at **31.25 MHz** were
+tested on the board (RP2, RedPitaya_OS 2.04-35, builds 2.0.0-5 and 2.0.0-6, `reportes/lock-in_pid_sq.md` and
+`reportes/lock-in_pid_sq_lock_test/`); the measured values quoted for the common instruments that were not measured
+again come from the tests of lock_in+pid_harmonic and are said so.
 
 This page describes what the App contains and its technical data. How to use it from the web page is in
 [Usage.md](Usage.md); how the parts are connected in [Structure.md](Structure.md); the registers in
@@ -146,17 +146,24 @@ signal_i ─┬─ ×(±1, sq_ref ) ─ LPF(lpf_sq ) ─ sqX_28 ─ ×2^sg_amp_s
 | Gains | `sg_amp_sq` (sqXo, sqYo) and `sg_amp_sqF` (sqFo): ×1 .. ×32k |
 | Low-pass filters | 2 independent: sqX & sqY share `lpf_sq`, sqF uses `lpf_sqF`. Order 0 (off), 1 or 2 (cascade of identical 1st-order stages) |
 | Time constants | τ = 8 ns · 2^(n+3), n = 0..27: 64 ns .. 8.59 s (cut-off 2.49 MHz .. 18.5 mHz) |
-| Latency | 2 ticks from `sq_ref` to OUT1 and back to the product (simulation `test/sq_lockin_sim.sh`, out1 looped to in1 inside the FPGA, `devAgent.md` 2026-10-12 00:50); the analog path (DAC, cables, ADC) adds its delay: at 31.25 MHz each 8 ns is 90° (a confirmar on the board) |
+| Latency | 2 ticks from `sq_ref` to OUT1 and back to the product (simulation `test/sq_lockin_sim.sh`, out1 looped to in1 inside the FPGA, `devAgent.md` 2026-10-12 00:50); the analog path (DAC, cables, ADC) adds its delay: at 31.25 MHz each 8 ns is 90° (the delay itself was not measured; in the test bench the dispersive signal at 31.25 MHz came out in sqYo with phase 0) |
 | R and φ | computed in the web page from sqX and sqY: R = √(X² + Y²), φ = atan2(Y, X) |
 
 Measured on the board at 50 kHz (`gen_mod_sqp` 1249, A Out1 = 1000, OUT1 → `dummy_simulator` on a second board → IN1,
 `reportes/lock-in_pid_sq.md` step 3): sqX = 204.6 ± 1.5 and sqY = 567.6 ± 4.2 counts, equal to the correlations
 ⟨in1·sign(sq_ref)⟩ = 207 and ⟨in1·sign(sq_quad)⟩ = 562 computed from a scope acquisition; with `gen_mod_phase_sq` =
 0 / 625 / 1250 / 1875 (0°, 90°, 180°, 270°) sqF = 201 / 561 / −206 / −552 (= sqX, sqY, −sqX, −sqY). At 31.25 MHz the
-generator and the modulation on OUT1 are exact, but the test setup has a ~20 kHz low-pass filter at the input of the
-simulator, so no signal comes back (sqX/sqY ≈ −7/−11 counts, noise); sqF still rotated in steps of 90° with the
-phase. **Demodulation and lock of a real signal at 31.25 MHz: a confirmar** (pending test with the filter of the
-simulator turned off).
+generator and the modulation on OUT1 are exact; with the ~20 kHz low-pass filter at the input of the simulator on,
+no signal comes back (sqX/sqY ≈ −7/−11 counts, noise) and sqF still rotated in steps of 90° with the phase.
+
+Measured on the board at 31.25 MHz with the simulator filter **off** (2026-10-12, 2.0.0-6,
+[`2026-10-12_14:00:00_lock_31MHz.md`](../../reportes/lock-in_pid_sq_lock_test/2026-10-12_14:00:00_lock_31MHz.md)
+in the Apps folder): `gen_mod_sqp` 1, A Out1 = 200, ×2, `lpf_sq` 262 µs 2nd order, phase 0 → during the scan sqYo
++3071 / −2775 counts with the zero crossing at the peak, sqXo +611 / −804; with ×32 or ×8 sqYo saturates. The two
+boards have independent clocks (≈ 17 ppm apart): a beat at ≈ 2.1 kHz appears on IN1 and on sqX/sqY with short filters
+(2146 Hz with τ = 2 µs), and the 262 µs 2nd-order filter removes it from sqYo outside the peak. With the filter off,
+the response at **50 kHz** becomes almost all in phase (sqXo saturates, sqYo +168 / −587): in the test bench the
+phase at 50 kHz came from the simulator filter.
 
 At 31.25 MHz the product of a sinusoid with the square reference has components at DC and at 62.5 MHz (fs/2,
 alternating sign): a filter of a few hundred ns already removes it, so the loop bandwidth can be much larger than
@@ -206,8 +213,9 @@ out = kp·e / 2^P  +  Σ(ki·e) / 2^I  +  kd·(slope of e) / 2^6
 | Controls | integrator reset, freeze output, freeze integrator (`pidX_ctrl`) | also frozen during a step (`sf_config`) |
 | Enable | the output is forced to 0 and the integrator reset while the PID is disabled by the lock control | `lock.v` l. 899 |
 
-Example (test configuration `lock_mode`): PID A, kp = −500 with /1024 → −0.488; ki = −20 with 537 ms →
-τ_i = 26.8 ms (seen in the [PID panel](Usage.md#pids-modules)).
+Example (test configuration `lock_mode` up to 2026-10-12 01:00): PID A, kp = −500 with /1024 → −0.488; ki = −20 with
+537 ms → τ_i = 26.8 ms (seen in the [PID panel](Usage.md#pids-modules)). Since 2026-10-12 (user's decision) the
+`lock_mode` configurations use kp = −250 (→ −0.244), also at 31.25 MHz (`test_files/lock_test.md`).
 
 ## Lock control (auto-lock)
 
@@ -239,6 +247,20 @@ in the Apps folder, not in this repository):
 | Error while locked (sqYo ×32) | mean ≈ 0, rms ≈ 2.6 mV (21–25 counts) |
 | Duration | 88 s, 134 s, 16 s without losing the lock (ended by hand) |
 | Residual | a 50 kHz component of ±1.5 mV on ctrl_A and ±3 mV on the error (residue of the modulation, as in lock_in+pid_harmonic) |
+
+Measured with this App at **31.25 MHz** (2.0.0-6 on RP2, 2026-10-12, `test_files/lock_in+pid_square__lock_mode_31MHz.json`:
+`gen_mod_sqp` 1, A Out1 = 200, ×2, `lpf_sq` 262 µs 2nd order, error = sqYo with phase 0, PID A kp −250 / ki −20 (537 ms),
+time trigger 2075000 (16.6 ms) or level 2000; input filter of `dummy_simulator` turned off;
+[`2026-10-12_14:00:00_lock_31MHz.md`](../../reportes/lock-in_pid_sq_lock_test/2026-10-12_14:00:00_lock_31MHz.md)):
+
+| Metric | Value |
+|---|---|
+| Locks | 4/4: Time and Level over HTTP, Time (*Choose from graph*, 2063067 = 16.505 ms) and Level 2000 upward from the web page |
+| Duration | 70 s (Time, page) and 70 s (Level, page) without losing the lock, 100 % of the samples LOCKED; 30 s and 65 s over HTTP |
+| Error while locked (sqYo ×2) | −1.0 ± 3.8 counts (0.46 mV rms) with Time, −1.0 ± 4.6 with Level |
+| ctrl_A at the lock point | 73.1 counts = **8.92 mV** (std 1.2 counts); 8.86 mV with Level. 50 kHz: 8.61 mV, same peak |
+| Signal at the lock point | with the modulation on, IN1 ≈ 0.5 × the peak (the ±127-count modulation is comparable to the width of the simulated peak); with the loop closed and the modulation off (A Out1 = −1), IN1 = 3781 ± 42 counts = the height of the peak |
+| Residual | ±3 counts on the error at ~2–3 kHz: residue of the beat between the clocks of the two boards |
 
 Measured with lock_in+pid_harmonic (same lock control and scope; `dummy_simulator` on a second Red Pitaya,
 v2.3.11 to v2.3.17; `reportes/lock-in_pid_h_lock_test/`):

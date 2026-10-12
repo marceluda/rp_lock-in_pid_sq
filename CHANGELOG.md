@@ -34,8 +34,13 @@ with builds 5 and 6 (see Notes).
   (5/5, ctrl_A 8.5–8.8 mV, the same point as lock_in+pid_harmonic); HTTP remote control (`example_usage.py` 15/15,
   exact `gen_mod_sqp` above 2^24 kept); streaming 976 kS/s, overrun 0; Config save/load without read-only keys;
   unit fields; Restart. Test configuration: `test_files/lock_in+pid_square__lock_mode.json` (Apps folder).
-- Not tested yet: a lock at 31.25 MHz (the input filter of the simulator has to be turned off), re-lock, step
-  response, DIO7_N output, the SSH client and the `py/` scripts other than `lock_from_registers.py`.
+- Lock at **31.25 MHz** on the board (build 6, testAgent 2026-10-12 14:00, input filter of `dummy_simulator` turned
+  off): `gen_mod_sqp` 1, A Out1 200, ×2, `lpf_sq` 262 µs, error = sqYo with phase 0, kp −250 / ki −20; 4/4 locks
+  (Time and Level, HTTP and web page), 70 s locked, error −1.0 ± 3.8 counts, ctrl_A 8.9 mV (same point of the peak as
+  at 50 kHz). A beat of ≈ 2.1 kHz between the clocks of the two boards is removed by the 262 µs filter. Test
+  configuration: `test_files/lock_in+pid_square__lock_mode_31MHz.json`. The reference `lock_mode` configurations use
+  kp −250 since 2026-10-12 (it was −500).
+- Not tested yet: re-lock, step response, DIO7_N output, the SSH client and the `py/` scripts other than `lock_from_registers.py`.
 - FPGA timing (build 4): WNS −9.308 ns / TNS −5095 ns in the paths inherited from lock_in+pid_harmonic; every path
   of the new square generator / lock-in has positive slack.
 - Documentation (2026-10-12, docAgent): `README.md` and `doc/` written for this App: `App.md` and `FPGA.md` reviewed
@@ -157,7 +162,6 @@ with builds 5 and 6 (see Notes).
 
 ## Pending
 
-- Lock at 31.25 MHz on the board (`dummy_simulator` with its input filter off).
 - Icon of the App (provisional: the one of lock_in+pid_harmonic).
 - GitHub repository `rp_lock-in_pid_sq` (to be created).
 - Screenshots still missing in `doc/`: Square Lock-in display opened, sqF tab, Auxiliar / Square Modulation

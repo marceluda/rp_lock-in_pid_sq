@@ -36,9 +36,11 @@ Current version: **2.0.0** (branch `devel2.0`). The major number 2 marks, as in 
   map changes from `0x054` on: see [doc/FPGA.md](doc/FPGA.md).
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
-and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real lock at 50 kHz** against a
-simulated peak (5/5, same lock point as the harmonic App), HTTP remote control (`example_usage.py` 15/15), streaming
-at 976 kS/s. Not yet tested: a lock at 31.25 MHz. The FPGA timing does not close in paths inherited from the harmonic
+and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
+31.25 MHz** against a simulated peak (50 kHz: 5/5, same lock point as the harmonic App; 31.25 MHz: 4/4, 70 s locked
+with Time and Level trigger, same point of the peak; it needs a system under test with enough bandwidth, see
+[doc/Usage.md](doc/Usage.md#5-working-at-3125-mhz)), HTTP remote control (`example_usage.py` 15/15), streaming
+at 976 kS/s. The FPGA timing does not close in paths inherited from the harmonic
 App (WNS −9.3 ns), while the new square blocks do; the App works. The icon is provisional (the harmonic one).
 Details: [doc/App.md](doc/App.md) and the [CHANGELOG](CHANGELOG.md).
 

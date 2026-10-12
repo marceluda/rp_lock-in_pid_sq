@@ -344,8 +344,10 @@ sent with the headers): 57/57, 35/35, 9/9, 30/30, `example_usage.py` rc 0. Those
 
 On the board the reference test is the LOCK MODE procedure of `test_files/lock_test.md` (Apps folder) with
 `test_files/lock_in+pid_square__lock_mode.json` and `dummy_simulator` on a second board; reports in
-`reportes/lock-in_pid_sq.md` and `reportes/lock-in_pid_sq_lock_test/`. **Pending: a lock at 31.25 MHz** (needs
-the input low-pass filter of `dummy_simulator` turned off, `dummy_lpf_on` = 0, on the other board).
+`reportes/lock-in_pid_sq.md` and `reportes/lock-in_pid_sq_lock_test/`. The lock at 31.25 MHz uses
+`test_files/lock_in+pid_square__lock_mode_31MHz.json` and needs the input low-pass filter of `dummy_simulator` turned
+off (`dummy_lpf_on` = 0) on the other board ([Usage.md](Usage.md#5-working-at-3125-mhz)); with that filter off the
+50 kHz configuration (error sqYo) no longer fits (the response at 50 kHz moves to sqXo).
 
 ## Installing on the board
 

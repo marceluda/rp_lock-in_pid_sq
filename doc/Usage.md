@@ -298,7 +298,8 @@ signal for the PID.
 1. **Lock-in modules**: Lock-in input = `in1`.
 2. **Square oscillator**: Half period = `50 kHz` (→ 1249, quadrature 90°), Phase = 0. The frequency has to be inside
    the bandwidth of the system (here the simulator has a ~20 kHz low-pass filter at its input: 50 kHz still passes
-   attenuated, 31.25 MHz does not).
+   attenuated, 31.25 MHz does not; see [Working at 31.25 MHz](#5-working-at-3125-mhz)). That filter also sets the phase
+   of the response: with it turned off the response at 50 kHz is in phase and the error is sqXo instead of sqYo.
 3. **Auxiliar → Square Modulation Amplitude**: *A Out1* = 100 (±50 counts ≈ ±6 mV added to OUT1), *A Out2* = −1.
 4. **Demodulation → sqX & sqY**: filter 262 µs | 607 Hz, order 2; Amplification ×32.
 5. Look at `sqXo` and `sqYo` (OscA/OscB) during the scan. In the test: sqYo went from +4933 to −3825 counts with the
@@ -311,9 +312,11 @@ signal for the PID.
 
 ### 3. Close the lock
 
-1. **PID A**: input = error, kp = −500 (/1024), ki = −20 (537 ms). The sign of the gains has to give negative
+1. **PID A**: input = error, kp = −250 (/1024), ki = −20 (537 ms). The sign of the gains has to give negative
    feedback around the zero crossing (here sqYo > 0 before the peak, so negative gains; try the other sign if the
    lock runs away).
+   The reference configuration `lock_mode` uses kp −250 since 2026-10-12 (user's decision: with −500 the loop of the
+   harmonic Apps was close to oscillating); the 50 kHz test of 2026-10-12 01:00 quoted below was done with kp −500.
 2. **Lock Control → config**: while locked, *PID A enable* on and *Scan enable* off.
 3. Choose the trigger:
    - **Time trigger**: press *Choose from graph* and click on the zero crossing of the error (16.56 ms →
@@ -366,18 +369,68 @@ HTTP (see [Remote.md](Remote.md)); the page follows the state without sending an
 
 ### 5. Working at 31.25 MHz
 
-Half period = 1 (`31.25 MHz`) is the highest frequency with quadrature (4 ticks per period). Things to know
-(from the design and the simulations; **the lock at 31.25 MHz has not been tested on the board yet, a confirmar**):
+Half period = 1 (`31.25 MHz`) is the highest frequency with quadrature (4 ticks per period). A lock at this frequency
+was tested on the board on 2026-10-12 (2.0.0-6 on RP2, against `dummy_simulator` on RP1; configuration
+`test_files/lock_in+pid_square__lock_mode_31MHz.json`,
+[report](../../reportes/lock-in_pid_sq_lock_test/2026-10-12_14:00:00_lock_31MHz.md) in the Apps folder). It is
+procedures 1–4 with these changes:
 
-- The signal at the output is not square: the DAC samples +A, +A, −A, −A are those of a sine of amplitude ≈ 1.27·A
-  after the DAC ([App.md](App.md#square-modulation-generator)).
-- The Phase only has 4 values (0, 90°, 180°, 270°). Use sqX, sqY and the R | φ of the Square Lock-in display to
-  see the real phase of the signal, and choose the component (or the sign of the PID gains) accordingly.
-- The analog path adds a delay: each 8 ns is 90° at this frequency.
-- The filter can be much shorter than at 50 kHz (the product has its AC part at 62.5 MHz): a few hundred ns already
-  removes it, which allows a faster loop.
-- The setup under test must pass 31.25 MHz: in the test bench the input filter of `dummy_simulator` (~20 kHz) had to
-  be turned off for this test, still pending.
+| Setting | 50 kHz (`lock_mode`) | 31.25 MHz (`lock_mode_31MHz`) |
+|---|---|---|
+| Square oscillator → Half period | 1249 (`50 kHz`) | **1** (`31.25 MHz`) |
+| Phase | 0 | 0 |
+| A Out1 | 100 (±50 counts) | **200** (±100 counts, a sine of ≈ ±127 counts after the DAC) |
+| sqX & sqY amplification | ×32 | **×2** (with ×32 or ×8 sqYo saturates at ±8192) |
+| sqX & sqY filter | 262 µs, order 2 | 262 µs, order 2 |
+| Error signal | sqYo | sqYo |
+| PID A | kp −250 (/1024), ki −20 (537 ms) | same (same sign: sqYo > 0 before the peak at both frequencies) |
+| Time trigger | 2072500 (16.58 ms) | **2075000** (16.6 ms); *Choose from graph* gave 2063067 (16.505 ms) |
+| Level trigger | 4000 (488 mV) | **2000** (244 mV, upward): sqYo only reaches ≈ ±3000 with ×2 |
+
+During the scan sqYo goes from +3071 to −2775 counts with a single zero crossing at the peak (16.76 ms); sqXo is
+smaller (+611 / −804) and wavy, so sqYo with phase 0 is the error and neither sqFo nor another phase was needed:
+
+![Scan at 31.25 MHz, A Out1 200, ×2, 262 µs: in1, ctrl_A, sqXo, sqYo (Square Lock-in+PID 2.0.0-6, plotted from the test data)](.Usage/sq31M_scan_in1_sqXo_sqYo_mod200_x2.png)
+
+With the time trigger chosen on the graph the lock closes in the next sweep and Capture Lock keeps the closing of the
+loop (ctrl_A blue, error red):
+
+![Lock captured at 31.25 MHz with the time trigger (Square Lock-in+PID 2.0.0-6)](.Usage/sq31M_capture_lock_time_trigger.jpg)
+
+Result: Time and Level trigger, 70 s each without losing the lock, error −1.0 ± 3.8 counts, ctrl_A 8.9 mV (the same
+point of the peak as at 50 kHz); details in [App.md](App.md#lock-control-auto-lock).
+
+Things to know:
+
+- **The system under test must have enough bandwidth.** With the input low-pass filter of `dummy_simulator`
+  (~20 kHz) on, nothing comes back at 31.25 MHz; the test was done with that filter turned off (`dummy_lpf_on` = 0 on
+  RP1). The same applies to a real system: the modulation has to reach the response.
+- **The signal at the output is not square**: the DAC samples +A, +A, −A, −A are those of a sine of amplitude
+  ≈ 1.27·A after the DAC ([App.md](App.md#square-modulation-generator)).
+- **IN1 does not show the top of the peak while modulating.** With A Out1 = 200 the modulation (≈ ±127 counts) is
+  comparable to the width of the simulated peak, so the mean of IN1 while locked is ≈ 0.5 × the peak (≈ 2000 counts).
+  With the loop closed and A Out1 = −1 (modulation off, the error stays at 0 and the PI holds) IN1 = 3781 ± 42 counts,
+  the height of the peak: the lock is at the maximum. To find the peak in the scan use the zero crossing of the error
+  and ctrl_A, not the shape of IN1, which is deformed by the modulation and by the beat below.
+- **Beat between boards without a common clock.** The two Red Pitayas have independent 125 MHz crystals
+  (≈ 17 ppm apart in the test): the simulator samples the 31.25 MHz signal (fs/4) with its own clock and a component
+  at ≈ 2.1 kHz appears on IN1 and on sqX/sqY with short filters. The 262 µs 2nd-order filter removes it from sqYo (std
+  0.0 counts outside the peak); while locked a residue of ±3 counts at ~2–3 kHz remains on the error. So, although the
+  product at 31.25 MHz has its AC part at 62.5 MHz and a filter of a few hundred ns would remove it, with this kind of
+  setup the filter cannot be that short (shorter than 262 µs was not tried with the loop closed). A setup sharing
+  the clock would not have the beat (a confirmar).
+- **Longer filters delay the crossing during the scan**: with 1.05 ms the zero crossing moved ~2 ms with respect to
+  the scan (it does not move the static lock point, but it moves the time trigger to choose).
+- **The Phase only has 4 values** (0, 90°, 180°, 270°). Use sqX, sqY and the R | φ of the Square Lock-in display to
+  see the real phase of the signal, and choose the component (or the sign of the PID gains) accordingly. The analog
+  path adds a delay: each 8 ns is 90° at this frequency. In the test bench phase 0 / sqYo was the right choice.
+- The fluctuation of ctrl_A while locked is small (1.2–1.5 counts rms) because the slope of the error is much larger
+  than at 50 kHz.
+
+**Note on 50 kHz with the simulator filter off.** The phase of the response at 50 kHz in the test bench comes mostly
+from the ~20 kHz input filter of `dummy_simulator`. With that filter off the response at 50 kHz is almost all in phase:
+sqXo saturates (±8192, crossing at 16.70 ms) and sqYo is small (+168 / −587); the error would then have to be sqXo
+instead of sqYo (not tried with the loop closed). The configuration `lock_mode` (sqYo) assumes the filter on.
 
 ## Saving and loading configurations
 

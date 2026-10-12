@@ -425,7 +425,7 @@ lock_set('error_sw', 2)                       # sqYo
 ### Configure a PID and the ramp
 
 ```python
-rp.set_pid('A', sw='error', sp=0, kp=-500, PSR='/1024',   # kp = -0.488
+rp.set_pid('A', sw='error', sp=0, kp=-250, PSR='/1024',   # kp = -0.244 (lock_mode config since 2026-10-12)
            ki=-20, ISR='537 ms',                          # tau_i = 537 ms / 20 = 26.8 ms
            kd=0, SAT=13, ctrl=0)                          # integral term limited to +-1 V
 rp.lock.out1_sw = 'ctrl_A'                                # OUT1 = PID A + ramp A (out1_sw = 12)
@@ -435,6 +435,10 @@ rp.set_ramp(step=400, low=-5000, high=5000, sawtooth=False, enable=True)
 rp.set_manual(ramp=True, pidA=False, pidB=False)          # "Scan enable": the ramp runs, PIDs off
 print(rp.get_pid('A'), rp.get_ramp(), rp.lock_status())
 ```
+
+The `lock_mode` test configurations use kp −250 since 2026-10-12 (−500 before; `example_usage.py` still restores
+kp −500 when it closes a lock). The same PID values lock at 50 kHz and at 31.25 MHz
+([Usage.md](Usage.md#5-working-at-3125-mhz)).
 
 Ramp period: `T = (high − low) · (step + 1) · 8 ns · (2 − sawtooth)` ([FPGA.md](FPGA.md#ramp-scan)). With
 `step=100, ±4000` (the ramp of `example_usage.py` before v2.3.17) the period is 12.9 ms, shorter than a
