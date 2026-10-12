@@ -3,7 +3,7 @@
 """
 Library for remote control of Lock-in+PID App on RedPitaya
 
-Remote control of the "Harmonic Lock-in+PID" App (lock_in+pid_harmonic) over HTTP, through the
+Remote control of the "Square Lock-in+PID" App (lock_in+pid_square) over HTTP, through the
 endpoints /lock, /osc and /calib of the App (see nginx.conf and doc/Remote.md).
 
 Needs: requests, numpy (and matplotlib for plot_meas()).
@@ -64,6 +64,16 @@ v2.3.17:
     resolved by every request). IPv4 is preferred; IPv6 is used only if global (a link-local fe80::
     address would need the interface in the URL). If the name can not be resolved, a warning is given
     and the name is used as before. Objects loaded from a .npy file do not resolve (rp.resolve() does).
+
+lock_in+pid_square v2.0.0 (Square Lock-in+PID, derived from lock_in+pid_harmonic v2.3.18; the notes above
+are the history of that App and apply here too):
+  - Square generator and lock-in instead of the harmonic ones: set_freq() / set_freq_hz() use gen_mod_sqp
+    (f = 125 MHz / (2*(gen_mod_sqp+1)), up to 31.25 MHz with sq_ref / sq_quad in quadrature), set_phase()
+    uses gen_mod_phase_sq (ticks, or units='deg'/'rad'), set_lpf() / get_lpf() the registers lpf_sq (sqX, sqY)
+    and lpf_sqF (sqF), tau = 8 ns * 2**(3..30), set_gain() sg_amp_sq / sg_amp_sqF, get_XY() sqX_28, sqY_28,
+    sqF_28. reg_labels follows the selectors of the web page (index.html).
+  - set_modulation_amplitud(): square modulation +-val/2 on OUT1 (sq_ref) / OUT2 (sq_quad), as the
+    harmonic one (same peak amplitude for the same value).
 """
 
 
@@ -110,25 +120,23 @@ TRIG_MODES = {0: 'auto', 1: 'normal', 2: 'single'}
 #%% Class for lock module
 
 reg_labels = {
-    'oscA_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'error',   4: 'ctrl_A',   5: 'ctrl_B',   6: 'Ramp A',   7: 'Ramp B',   8: 'pidA_in',   9: 'pidB_in',   10: 'PID A out',   11: 'PID B out',   12: 'sin_ref',   13: 'cos_ref',   14: 'cos_1f',   15: 'cos_2f',   16: 'cos_3f',   17: 'Xo',   18: 'Yo',   19: 'F1o',   20: 'F2o',   21: 'F3o',   22: 'signal_i',   23: 'out1',   24: 'out2'},
-    'oscB_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'error',   4: 'ctrl_A',   5: 'ctrl_B',   6: 'Ramp A',   7: 'Ramp B',   8: 'pidA_in',   9: 'pidB_in',   10: 'PID A out',   11: 'PID B out',   12: 'sin_ref',   13: 'cos_ref',   14: 'cos_1f',   15: 'cos_2f',   16: 'cos_3f',   17: 'Xo',   18: 'Yo',   19: 'F1o',   20: 'F2o',   21: 'F3o',   22: 'signal_i',   23: 'out1',   24: 'out2'},
-    'trig_sw': {0: 'None',   1: 'Pin',   2: 'Scan floor',   4: 'Scan ceil',   8: 'harmonic mod.',   16: 'Square mod.',   32: 'Out of lock',   64: 'Jump trigger',   128: 'Lock control trig'},
-    'out1_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'in1-in2',   4: 'error',   5: 'cos_1f',   6: 'cos_2f',   7: 'cos_3f',   8: 'cos_ref',   9: 'sin_ref',   10: 'PID A out',   11: 'PID B out',   12: 'ctrl_A',   13: 'ctrl_B',   14: 'aux_A',   15: 'aux_B'},
-    'out2_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'in1-in2',   4: 'error',   5: 'cos_1f',   6: 'cos_2f',   7: 'cos_3f',   8: 'cos_ref',   9: 'sin_ref',   10: 'PID A out',   11: 'PID B out',   12: 'ctrl_A',   13: 'ctrl_B',   14: 'aux_A',   15: 'aux_B'},
-    'lock_trig_sw': {0: 'error',   1: 'Xo',   2: 'Yo',   3: 'F1o',   4: 'F2o',   5: 'F3o',   6: '0 (sqXo)',   7: '0 (sqYo)',   8: '0 (sqFo)',   9: 'signal_i',   10: 'Ramp A',   11: 'aux_A',   12: 'in1',   13: 'in2',   14: 'in1-in2',   15: 'PID A out'},
-    'rl_signal_sw': {0: 'in1',   1: 'in2',   2: 'in1-in2',   3: 'aux_A',   4: 'aux_B',   5: '0',   6: '0',   7: '0'},
-    'signal_sw': {0: 'in1',   1: 'in2',   2: 'in1-in2',   3: 'cos_ref',   4: 'sin_ref',   5: 'cos_1f',   6: 'aux_A',   7: 'Ramp A'},
-    'sg_amp0': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512',   10: 'x1k',   11: 'x2k',   12: 'x4k',   13: 'x8k',   14: 'x16k',   15: 'x32k',   16: 'x64k',   17: 'x128k',   18: 'x256k',   19: 'x512k'},
-    'sg_amp1': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512'},
-    'sg_amp2': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512'},
-    'sg_amp3': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512'},
-    'error_sw': {0: '0',   1: 'Xo',   2: 'Yo',   3: 'F1o',   4: 'F2o',   5: 'F3o',   6: 'in1',   7: 'in1-in2'},
-    'pidA_sw': {0: 'error',   1: 'Xo',   2: 'Yo',   3: 'F1o',   4: 'F2o',   5: 'F3o',   6: 'signal_i',   7: 'Ramp A',   8: 'in1-in2',   9: 'in1',   10: 'in2',   11: 'aux_A',   12: 'aux_B',   13: 'cos_ref',   14: 'sin_ref',   15: '0'},
+    'oscA_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'error',   4: 'ctrl_A',   5: 'ctrl_B',   6: 'Ramp A',   7: 'Ramp B',   8: 'pidA_in',   9: 'pidB_in',   10: 'PID A out',   11: 'PID B out',   12: 'sq_ref',   13: 'sq_quad',   14: 'sq_phas',   15: 'sqXo',   16: 'sqYo',   17: 'sqFo',   18: 'signal_i',   19: 'out1',   20: 'out2'},
+    'oscB_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'error',   4: 'ctrl_A',   5: 'ctrl_B',   6: 'Ramp A',   7: 'Ramp B',   8: 'pidA_in',   9: 'pidB_in',   10: 'PID A out',   11: 'PID B out',   12: 'sq_ref',   13: 'sq_quad',   14: 'sq_phas',   15: 'sqXo',   16: 'sqYo',   17: 'sqFo',   18: 'signal_i',   19: 'out1',   20: 'out2'},
+    'trig_sw': {0: 'None',   1: 'Pin',   2: 'Scan floor',   4: 'Scan ceil',   8: 'Square mod.',   32: 'Out of lock',   64: 'Jump trigger',   128: 'Lock control trig'},
+    'out1_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'in1-in2',   4: 'error',   5: 'sq_ref',   6: 'sq_quad',   7: 'sq_phas',   8: 'sqXo',   9: 'sqYo',   10: 'PID A out',   11: 'PID B out',   12: 'ctrl_A',   13: 'ctrl_B',   14: 'aux_A',   15: 'aux_B'},
+    'out2_sw': {0: '0',   1: 'in1',   2: 'in2',   3: 'in1-in2',   4: 'error',   5: 'sq_ref',   6: 'sq_quad',   7: 'sq_phas',   8: 'sqXo',   9: 'sqYo',   10: 'PID A out',   11: 'PID B out',   12: 'ctrl_A',   13: 'ctrl_B',   14: 'aux_A',   15: 'aux_B'},
+    'lock_trig_sw': {0: 'error',   1: 'sqXo',   2: 'sqYo',   3: 'sqFo',   4: 'signal_i',   5: 'Ramp A',   6: 'aux_A',   7: 'in1',   8: 'in2',   9: 'in1-in2',   10: 'PID A out',   11: 'PID B out',   12: 'ctrl_A',   13: 'ctrl_B',   14: 'Ramp B',   15: 'aux_B'},
+    'rl_signal_sw': {0: 'in1',   1: 'in2',   2: 'in1-in2',   3: 'aux_A',   4: 'aux_B',   5: 'sqXo',   6: 'sqYo',   7: 'sqFo'},
+    'signal_sw': {0: 'in1',   1: 'in2',   2: 'in1-in2',   3: 'sq_ref',   4: 'sq_quad',   5: 'sq_phas',   6: 'aux_A',   7: 'Ramp A'},
+    'sg_amp_sq': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512',   10: 'x1k',   11: 'x2k',   12: 'x4k',   13: 'x8k',   14: 'x16k',   15: 'x32k'},
+    'sg_amp_sqF': {0: 'x1',   1: 'x2',   2: 'x4',   3: 'x8',   4: 'x16',   5: 'x32',   6: 'x64',   7: 'x128',   8: 'x256',   9: 'x512',   10: 'x1k',   11: 'x2k',   12: 'x4k',   13: 'x8k',   14: 'x16k',   15: 'x32k'},
+    'error_sw': {0: '0',   1: 'sqXo',   2: 'sqYo',   3: 'sqFo',   4: 'signal_i',   5: 'in2',   6: 'in1',   7: 'in1-in2'},
+    'pidA_sw': {0: 'error',   1: 'sqXo',   2: 'sqYo',   3: 'sqFo',   4: 'signal_i',   5: 'Ramp A',   6: 'in1-in2',   7: 'in1',   8: 'in2',   9: 'aux_A',   10: 'aux_B',   11: 'sq_ref',   12: 'sq_quad',   13: 'sq_phas'},
     'pidA_PSR': {0: '/1', 1: '/8', 2: '/64', 3: '/1024', 4: '/4096'},
     'pidA_ISR': {0: '8 ns',   1: '64 ns',   2: '512 ns',   3: '8 us',   4: '65 us',   5: '524 us',   6: '8 ms',   7: '67 ms',   8: '537 ms',   9: '9 s'},
     'pidA_DSR': {0: '7.5 ns',   1: '60 ns',   2: '480 ns',   3: '7.68 us',   4: '61.44 us',   5: '491.5 us'},
     'pidA_SAT': {0: '±122uV',   1: '±244uV',   2: '±488uV',   3: '±977uV',   4: '±2mV',   5: '±4mV',   6: '±8mV',   7: '±16mV',   8: '±31mV',   9: '±62mV',   10: '±125mV',   11: '±250mV',   12: '±500mV',   13: '±1 V'},
-    'pidB_sw': {0: 'error',   1: 'Xo',   2: 'Yo',   3: 'F1o',   4: 'F2o',   5: 'F3o',   6: 'signal_i',   7: 'Ramp A',   8: 'in1-in2',   9: 'in1',   10: 'in2',   11: 'aux_A',   12: 'aux_B',   13: 'cos_ref',   14: 'sin_ref',   15: '0'},
+    'pidB_sw': {0: 'error',   1: 'sqXo',   2: 'sqYo',   3: 'sqFo',   4: 'signal_i',   5: 'Ramp A',   6: 'in1-in2',   7: 'in1',   8: 'in2',   9: 'aux_A',   10: 'aux_B',   11: 'sq_ref',   12: 'sq_quad',   13: 'sq_phas'},
     'pidB_PSR': {0: '/1', 1: '/8', 2: '/64', 3: '/1024', 4: '/4096'},
     'pidB_ISR': {0: '8 ns',   1: '64 ns',   2: '512 ns',   3: '8 us',   4: '65 us',   5: '524 us',   6: '8 ms',   7: '67 ms',   8: '537 ms',   9: '9 s'},
     'pidB_DSR': {0: '7.5 ns',   1: '60 ns',   2: '480 ns',   3: '7.68 us',   4: '61.44 us',   5: '491.5 us'},
@@ -353,7 +361,7 @@ class _Registers():
         return f"{self._cmd}({self.url})"
 
     def _value(self, name, value):
-        """Integer value of a register, translating labels (e.g. oscA_sw='cos_ref')"""
+        """Integer value of a register, translating labels (e.g. oscA_sw='sq_ref')"""
         if isinstance(value, str) and name in self._reg_labels:
             value = _label_alias.get(value, value)
             keys = [ k for k,v in self._reg_labels[name].items() if v==value ]
@@ -446,13 +454,13 @@ class Lock(_Registers):
     def __init__(self, url, reg=None, resolve=True):
         super().__init__(url, 'lock', reg=reg, labels=reg_labels, resolve=resolve)
 
-# l = Lock('http://rp-f00a3b.local/lock_in+pid_harmonic')
+# l = Lock('http://rp-f00a3b.local/lock_in+pid_square')
 
 
 #
-#    l.get(['pidA_sw','cos_ref'])
+#    l.get(['pidA_sw','sq_ref'])
 #
-#    l.get('cos_ref')
+#    l.get('sq_ref')
 #
 #    # l.get('pepe')
 #
@@ -934,7 +942,7 @@ class Osc(_Registers):
         return new
 
 
-# osc = Osc('http://rp-f00a3b.local/lock_in+pid_harmonic')
+# osc = Osc('http://rp-f00a3b.local/lock_in+pid_square')
 
 
 #
@@ -955,7 +963,7 @@ class Osc(_Registers):
 class RedPitayaApp():
     def __init__(self, url, name=None, resolve=True):
         """
-        url     : URL of the App (http://rp-XXXXXX.local/lock_in+pid_harmonic, as copied from the browser), or
+        url     : URL of the App (http://rp-XXXXXX.local/lock_in+pid_square, as copied from the browser), or
                   a .npy file of save_params() (offline object: its name is not resolved, see resolve())
         name    : name of the object (default: host of the URL)
         resolve : v2.3.17: resolve the host name once here and send the requests to that IP (with the
@@ -1005,7 +1013,7 @@ class RedPitayaApp():
             self.filename = None
 
         self.__doc__ = """
-            Class to control Red Pitaya lock-in+pid Harmonic
+            Class to control Red Pitaya Square lock-in+pid
 
             The lock-in      registers can be accessed throught {rp}.lock
             The oscilloscipe registers can be accessed throught {rp}.osc
@@ -1026,9 +1034,9 @@ class RedPitayaApp():
                 {rp}.plot_meas()                         : Fast plot of last acquisition
 
                 {rp}.set_signal() / set_gain()           : Lock-in input and gains
-                {rp}.set_freq() / set_freq_hz()          : Modulation frequency
-                {rp}.set_phase()                         : Phase of cos_1f..3f
-                {rp}.set_modulation_amplitud()           : Modulation added to OUT1/OUT2
+                {rp}.set_freq() / set_freq_hz()          : Square modulation frequency (up to 31.25 MHz)
+                {rp}.set_phase()                         : Delay / phase of sq_phas (sqF)
+                {rp}.set_modulation_amplitud()           : Square modulation added to OUT1/OUT2
                 {rp}.set_lpf()                           : Configure Low Pass Filters values
                 {rp}.get_lpf()                           : Show Low Pass Filters values in human readble format
                 {rp}.get_XY()                            : Get demodulated values from lock-in module
@@ -1194,98 +1202,101 @@ class RedPitayaApp():
 
 
     # ---- Lock-in -----------------------------------------------------------------------------------
+    # lock_in+pid_square v2.0.0: square generator (gen_mod_sqp, gen_mod_phase_sq) and square lock-in
+    # (sqX, sqY share lpf_sq / sg_amp_sq; sqF has lpf_sqF / sg_amp_sqF). See doc/FPGA.md.
 
-    _lpf_lines = {'ref': 0, 'x': 0, 'y': 0, 'xy': 0, 'f0': 0, 'f1': 1, 'f2': 2, 'f3': 3}
+    _lpf_lines = {'ref': 'sq', 'x': 'sq', 'y': 'sq', 'xy': 'sq', 'sq': 'sq', 'f': 'sqF', 'sqf': 'sqF'}
 
     def _lpf_line_list(self, line):
+        """'xy' (or 'ref', 'x', 'y', 0) -> ['sq'] ; 'f' (or 1) -> ['sqF'] ; 'all' -> both ; or a list of them"""
         if isinstance(line, (list, tuple)):
             return sorted(set( jj for ll in line for jj in self._lpf_line_list(ll) ))
         if isinstance(line, str):
             if line.lower() == 'all':
-                return [0, 1, 2, 3]
+                return ['sq', 'sqF']
             if line.lower() in self._lpf_lines:
                 return [ self._lpf_lines[line.lower()] ]
-        elif isinstance(line, (int, np.integer)) and 0 <= line <= 3:
-            return [ int(line) ]
-        raise ValueError("line should be 'ref' (or 0: X and Y), 1, 2, 3 ('F1', 'F2', 'F3'), 'all' or a list of them")
+        elif isinstance(line, (int, np.integer)) and 0 <= line <= 1:
+            return [ ['sq', 'sqF'][int(line)] ]
+        raise ValueError("line should be 'xy' (or 'ref', 0: sqX and sqY), 'f' (or 1: sqF), 'all' or a list of them")
 
-    def set_lpf(self, tau_exponent=14, order=2 , line='ref' ):
+    def set_lpf(self, tau_exponent=10, order=2 , line='xy' ):
         """
-        Configure Lof Pass Filters
-            tau_exponent : The characteristic time will be set to 2**tau_exponent * 8 ns. tau_exponent should be between 14 and 29
-            order        : order of the filter. Could be 0 (OFF), 1 or 2
-            line         : which line of demodulation will be modified. 'ref' or 0 refers to X and Y lines. 1,2,3 refers to F1, F2, F3 lines.
-                           'all' sets the four lines; a list of lines is also accepted.
-        Register lpf_F<n> = order << 4 | (tau_exponent - 14)   (lock.v, LP_filter3.v)
+        Configure the Low Pass Filters of the square lock-in
+            tau_exponent : the time constant is 2**tau_exponent * 8 ns, tau_exponent from 3 (64 ns) to 30 (8.6 s)
+            order        : order of the filter: 0 (OFF), 1 or 2
+            line         : 'xy' (or 'ref', 0: sqX and sqY, register lpf_sq), 'f' (or 1: sqF, register lpf_sqF),
+                           'all' (both) or a list of them
+        Register lpf_sq / lpf_sqF = order << 5 | (tau_exponent - 3)   (lock.v, lock/LP_filter_sq.v)
         Returns the time constant in seconds.
         """
         tau_exponent = _to_int(tau_exponent)
         order        = _to_int(order)
-        if tau_exponent>29 or tau_exponent<14:
-            raise ValueError(f'tau_exponent shold be between 14 and 29')
+        if tau_exponent>30 or tau_exponent<3:
+            raise ValueError(f'tau_exponent shold be between 3 and 30')
         if order>2 or order<0:
             raise ValueError(f'order should be between 0 (OFF) and 2')
 
-        val  = tau_exponent -14
-        val += 16*order
+        val  = tau_exponent - 3
+        val += 32*order
 
         lines = self._lpf_line_list(line)
-        self.lock.set({ f'lpf_F{ll}' : val for ll in lines })
+        self.lock.set({ f'lpf_{ll}' : val for ll in lines })
 
         tau = TICK*2**tau_exponent
-        print(f'LPF {",".join("ref" if ll==0 else f"F{ll}" for ll in lines)} was set to 8 ns * 2**{tau_exponent} = {tau*1e6:.0f} us , order {order}')
+        print(f'LPF {",".join(lines)} was set to 8 ns * 2**{tau_exponent} = {tau*1e6:.3f} us , order {order}')
         return tau
 
     @staticmethod
     def _lpf_decode(lpf):
-        """lpf_F<n> register -> (tau in seconds, order). [5:4] = 3 is order 1 (only filter A)."""
-        val   = (lpf & 15) + 14
-        order = {0: 0, 1: 1, 2: 2, 3: 1}[(lpf >> 4) & 3]
+        """lpf_sq / lpf_sqF register -> (tau in seconds, order). [6:5] = 3 is also order 2."""
+        val   = min(lpf & 31, 27) + 3
+        order = {0: 0, 1: 1, 2: 2, 3: 2}[(lpf >> 5) & 3]
         return TICK*2**val, order
 
     def get_lpf(self,line=None):
         """
-        Shows Lof Pass Filters in Human readable format
-            line: which line of demodulation will be shown. 'ref' or 0 refers to X and Y lines. 1,2,3 refers to F1, F2, F3 lines.
-                  With line=None prints the four of them and returns a dict name -> (tau [s], order).
-                  With a line returns (tau [s], order).
+        Shows the Low Pass Filters in human readable format
+            line: 'xy' (sqX and sqY) or 'f' (sqF). With line=None prints both and returns a dict
+                  name -> (tau [s], order). With a line returns (tau [s], order).
         """
-        regs = self.lock.get(['lpf_F0','lpf_F1','lpf_F2','lpf_F3'])
-        lpfs = [ regs[f'lpf_F{jj}'] for jj in range(4) ]
+        regs = self.lock.get(['lpf_sq','lpf_sqF'])
 
         if line is None:
             print('Values of Low Pass Filters in Human readable numbers (order 0 is OFF):')
             rta = {}
-            for lpf,name in zip(lpfs, 'ref F1 F2 F3'.split()):
+            for name, label in (('sq', 'sqX,sqY'), ('sqF', 'sqF')):
+                lpf = regs[f'lpf_{name}']
                 tau, order = self._lpf_decode(lpf)
-                val = (lpf & 15) + 14
-                print(f'{name:4s}: is set to 2**{val:<2d} * 8 ns = {tau} seg , order={order} ')
+                val = min(lpf & 31, 27) + 3
+                print(f'{label:8s}: is set to 2**{val:<2d} * 8 ns = {tau} seg , order={order} ')
                 rta[name] = (tau, order)
             return rta
         else:
-            return self._lpf_decode( lpfs[ self._lpf_line_list(line)[0] ] )
+            return self._lpf_decode( regs[ 'lpf_' + self._lpf_line_list(line)[0] ] )
 
     def get_XY(self,units='V',F=False):
         """
-        Get values of lock-in registers.
-            units  :  'V' is Volts. Anything else is 'int' values.
-            F      : if False, returs X and Y . If True, returns X, Y, F1, F2, F3
-        X (in phase, from cos_ref) and Y (quadrature, from sin_ref) are read at the same instant
-        (read_ctrl[0] freezes the copies).
+        Get values of the square lock-in registers.
+            units  :  'V' is Volts. Anything else is 'int' values (counts of the input, 8192 = 1 V).
+            F      : if False, returns sqX and sqY. If True, returns sqX, sqY, sqF
+        sqX (from sq_ref, in phase) and sqY (from sq_quad, quadrature) are read at the same instant
+        (read_ctrl[0] freezes the copies). sq?_28 = mean(+-signal_i) * 2**13: with an input square wave of
+        amplitude A in phase with the reference, sqX = A; with a sinusoidal input, sqX = 2A/pi * cos(phi).
         """
         offset = 0
-        gain   = 1.0/2**13/2**11
+        gain   = 1.0/2**13/2**13
 
         if units.lower()[0]=='v':
             input_signal = self.lock.signal_sw
             if input_signal in [0,1]:
                 calib = self.calib or {}
                 if f'FE_CH{input_signal+1}_FS_G_HI' in calib:
-                    gain   = calib[f'FE_CH{input_signal+1}_FS_G_HI']*100/2**45/2**11
+                    gain   = calib[f'FE_CH{input_signal+1}_FS_G_HI']*100/2**45/2**13
         else:
-            gain = 1.0/2**11
+            gain = 1.0/2**13
 
-        names = ['X_28','Y_28'] + (['F1_28','F2_28','F3_28'] if F else [])
+        names = ['sqX_28','sqY_28'] + (['sqF_28'] if F else [])
 
         read_ctrl           = self.lock.read_ctrl
         self.lock.read_ctrl = read_ctrl | 1
@@ -1298,45 +1309,53 @@ class RedPitayaApp():
 
     def get_freq(self):
         """
-        Returns the lock-in base modulation frequency in Hz
+        Returns the square modulation frequency in Hz: 125 MHz / (2 * (gen_mod_sqp + 1))
         """
-        return 1.0/(  (self.lock.gen_mod_hp+1)*2520*TICK  )
+        return 1.0/(  (self.lock.gen_mod_sqp+1)*2*TICK  )
 
     def get_period(self):
         """
-        Returns the lock-in base modulation period in sec
+        Returns the square modulation period in sec: 2 * (gen_mod_sqp + 1) * 8 ns
         """
-        return (self.lock.gen_mod_hp+1)*2520*TICK
+        return (self.lock.gen_mod_sqp+1)*2*TICK
 
     def set_freq(self, val ):
         """
-        Sets the frequency value by setting the 'val' value (in ints) to the lock.gen_mod_hp register.
+        Sets the square modulation frequency with the half period register gen_mod_sqp.
         Returns the frequency set in Hz
 
-            val  : integer to assign to gen_mod_hp. Can be between 0 to 16383
-                   f = 125 MHz / (2520 * (val + 1)) : 49.603 kHz .. 3.03 Hz
+            val  : integer to assign to gen_mod_sqp, 0 .. 2**32-1:
+                   f = 125 MHz / (2 * (val + 1)) : 0 -> 62.5 MHz (no quadrature), 1 -> 31.25 MHz, 2**32-1 -> 0.029 Hz.
+                   sq_quad is exactly 90 deg behind sq_ref when val is odd.
         """
         val = _to_int(val)
-        if val<0 or val>16383:
-            raise ValueError(f'val wrong value. Values should be from 0 to 16383. You tryed to set: {val}')
-        self.lock.gen_mod_hp = val
+        if val<0 or val>2**32-1:
+            raise ValueError(f'val wrong value. Values should be from 0 to 2**32-1. You tryed to set: {val}')
+        self.lock.gen_mod_sqp = val
         return self.get_freq()
 
-    def set_freq_hz(self, freq):
+    def set_freq_hz(self, freq, quadrature=True):
         """
-        Sets the modulation frequency closest to freq [Hz] (3.03 Hz .. 49.603 kHz).
+        Sets the square modulation frequency closest to freq [Hz] (0.029 Hz .. 31.25 MHz; 62.5 MHz with
+        quadrature=False). With quadrature=True (default) only odd gen_mod_sqp values are used (period
+        multiple of 4 ticks: sq_quad exactly 90 deg behind sq_ref).
         Returns the frequency set in Hz.
         """
-        hp = int(round( 1.0/(freq*2520*TICK) )) - 1
-        return self.set_freq( min(16383, max(0, hp)) )
+        sqp = 1.0/(freq*2*TICK) - 1
+        if quadrature:
+            sqp = 2*int(round((sqp - 1)/2)) + 1      # nearest odd value
+            sqp = min(2**32-1, max(1, sqp))
+        else:
+            sqp = min(2**32-1, max(0, int(round(sqp))))
+        return self.set_freq( sqp )
 
 
     def set_modulation_amplitud(self,val,ch='out1'):
         """
-        Sets the amplitude of modulation over an specific output channel. It's equivalent
-        to setting the lock.mod_out[1,2] register to that value.
-        Returns the modulation amplitude in Volts.
-            val  : integer from -1 to 8191 . -1 means OFF. 0 is 0 Volts amplitude. 8192 ints equals to 1 Volt.
+        Sets the amplitude of the square modulation added to an output: OUT1 +- val/2 with sq_ref,
+        OUT2 +- val/2 with sq_quad. It's equivalent to setting the lock.mod_out[1,2] register to that value.
+        Returns the modulation amplitude (peak) in Volts.
+            val  : integer from -1 to 8191 . -1 means OFF. 8192 ints equals to 1 Volt (peak = val/2).
             ch   : channel. Can be 'out1' or 'out2'
         """
         val = _to_int(val)
@@ -1351,26 +1370,31 @@ class RedPitayaApp():
         return float(val)/8192/2
 
 
-    def set_phase(self,val):
+    def set_phase(self, val, units='ticks'):
         """
-        Sets the phase value by setting the 'val' value (in ints) to the lock.gen_mod_phase register.
-        The value representa the de-phasing of cos_ref vs cos_1f (and also cos_2f and cos_3f).
-        Returns the phase in degrees
+        Sets the delay of sq_phas (and so of the sqF demodulation) respect to sq_ref, register gen_mod_phase_sq.
+        Returns the phase in degrees (with the current period).
 
-            val  : integer to assign to gen_mod_phase. Can be between 0 to 2519. 2520 represents 360°
+            val   : delay in ticks of 8 ns (0 .. period-1), or an angle with units='deg' / 'rad'
+            units : 'ticks' (default), 'deg' or 'rad'
+        At 31.25 MHz (gen_mod_sqp = 1) the period has 4 ticks: steps of 90 deg.
         """
+        P = 2*(self.lock.gen_mod_sqp + 1)
+        if units in ('deg', 'rad'):
+            frac = float(val)/(360.0 if units == 'deg' else 2*np.pi)
+            val  = int(round( (frac % 1.0) * P )) % P
         val = _to_int(val)
-        if val<0 or val>2519:
-            raise ValueError(f'val wrong value. Values should be from 0 to 2519. You tryed to set: {val}')
+        if val<0 or val>P-1:
+            raise ValueError(f'val wrong value. Values should be from 0 to {P-1} (period - 1). You tryed to set: {val}')
 
-        self.lock.gen_mod_phase = val
+        self.lock.gen_mod_phase_sq = val
 
-        return float(val)/2520*360
+        return float(val)/P*360
 
     def set_signal(self, sw):
         """
-        Selects the input of the lock-in (signal_sw): 0 'in1', 1 'in2', 2 'in1-in2', 3 'cos_ref',
-        4 'sin_ref', 5 'cos_1f', 6 'aux_A', 7 'Ramp A' (number or label).
+        Selects the input of the lock-in (signal_sw): 0 'in1', 1 'in2', 2 'in1-in2', 3 'sq_ref',
+        4 'sq_quad', 5 'sq_phas', 6 'aux_A', 7 'Ramp A' (number or label).
         Returns the label set.
         """
         val = self.lock.set('signal_sw', sw)
@@ -1378,13 +1402,13 @@ class RedPitayaApp():
 
     def set_gain(self, line, amp):
         """
-        Gain of the demodulated outputs (sg_amp0..3): Xo, Yo = X, Y * 2**sg_amp0, Fno = Fn * 2**sg_ampn
-            line : 'ref' (or 0: Xo and Yo), 1, 2, 3 ('F1', 'F2', 'F3')
-            amp  : exponent (0..19 for ref, 0..9 for F1..F3) or label ('x1', 'x32', 'x1k', ...)
+        Gain of the demodulated outputs: sqXo, sqYo = sqX, sqY * 2**sg_amp_sq ; sqFo = sqF * 2**sg_amp_sqF
+            line : 'xy' (or 'ref', 0: sqXo and sqYo), 'f' (or 1: sqFo)
+            amp  : exponent (0..15) or label ('x1', 'x32', 'x1k', ...)
         Returns the gain factor.
         """
         ll  = self._lpf_line_list(line)[0]
-        val = self.lock.set(f'sg_amp{ll}', amp)
+        val = self.lock.set(f'sg_amp_{ll}', amp)
         return 2**val
 
 
@@ -1403,8 +1427,8 @@ class RedPitayaApp():
                 PSR=None, ISR=None, DSR=None, SAT=None, ctrl=None):
         """
         Configures PID A or PID B. Only the arguments given are written.
-            sw   : input (number or label: 'error','Xo','Yo','F1o','F2o','F3o','signal_i','Ramp A','in1-in2',
-                   'in1','in2','aux_A','aux_B','cos_ref','sin_ref','0')
+            sw   : input (number or label: 'error','sqXo','sqYo','sqFo','signal_i','Ramp A','in1-in2',
+                   'in1','in2','aux_A','aux_B','sq_ref','sq_quad','sq_phas')
             sp   : set point (counts, -8192..8191; 8192 = 1 V)
             kp, ki, kd : gains (-8192..8191). kp is divided by PSR, the integrator time is
                    8 ns * 2**n(ISR) / ki, the derivative averages 2**n(DSR) samples
@@ -1533,8 +1557,9 @@ class RedPitayaApp():
             time       : time trigger in seconds after the scan floor (or time_ticks, ticks of 8 ns,
                          0 .. 2**32-1 = 34.4 s with the FPGA of v2.3.15)
             level      : level in counts (-8192..8191) or level_V in Volts (8192 counts = 1 V)
-            signal     : signal of the level trigger (lock_trig_sw, number or label: 'error','Xo',
-                         'Yo','F1o','F2o','F3o','signal_i','Ramp A','aux_A','in1','in2','in1-in2','PID A out')
+            signal     : signal of the level trigger (lock_trig_sw, number or label: 'error','sqXo',
+                         'sqYo','sqFo','signal_i','Ramp A','aux_A','in1','in2','in1-in2','PID A out',
+                         'PID B out','ctrl_A','ctrl_B','Ramp B','aux_B')
             rise       : level crossing upwards (True) or downwards (False)
             final      : enables while LOCKED, e.g. ('pidA',) or ('pidA','pidB') or 'pidA,pidB'
             manual     : enables while not locked; None keeps the current ones (usually ('ramp',))
@@ -1674,7 +1699,7 @@ class RedPitayaApp():
 
 
 
-# rp = RedPitayaApp('http://rp-f00a3b.local/lock_in+pid_harmonic/?type=run')
+# rp = RedPitayaApp('http://rp-f00a3b.local/lock_in+pid_square/?type=run')
 
 
 # rp.save_params('med00.npy')
@@ -1718,9 +1743,9 @@ class RedPitayaApp():
 """
 import bs4
 
-# h    = bs4.BeautifulSoup( requests.get('http://rp-f00a3b.local/lock_in+pid_harmonic/').text , "lxml")
+# h    = bs4.BeautifulSoup( requests.get('http://rp-f00a3b.local/lock_in+pid_square/').text , "lxml")
 
-h    = bs4.BeautifulSoup( requests.get('http://192.168.1.117/lock_in+pid_harmonic/').text , "lxml")
+h    = bs4.BeautifulSoup( requests.get('http://192.168.1.117/lock_in+pid_square/').text , "lxml")
 
 
 

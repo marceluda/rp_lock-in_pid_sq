@@ -5,6 +5,8 @@ Example usage of remote control by control Finn
 
 Each "#%%" block is a cell (Spyder / VS Code / IPython): run them one by one.
 Tested with the App v2.3.15 on Ecosystem 2.0 (RedPitaya_OS 2.04); scope_stop()/scope_auto(): v2.3.16.
+lock_in+pid_square v2.0.0 (Square Lock-in+PID): square generator and lock-in (sq_ref / sq_quad / sq_phas,
+sqX / sqY / sqF) instead of the harmonic ones of lock_in+pid_harmonic.
 """
 
 import os
@@ -18,7 +20,7 @@ from control_finn import RedPitayaApp, reg_labels
 #%%  Connect to RP
 
 # URL of the App (as copied from the browser; '?type=run' is removed)
-URL = os.environ.get('RP_URL', 'http://rp-XXXXXX.local/lock_in+pid_harmonic/?type=run')
+URL = os.environ.get('RP_URL', 'http://rp-XXXXXX.local/lock_in+pid_square/?type=run')
 
 rp =  RedPitayaApp(URL)
 
@@ -40,12 +42,12 @@ control_finn.WebScopeNotStopped and does not acquire: try again, or press Single
 
 print('scope of the web page, trig_mode (0 Auto, 1 Normal, 2 Single):', rp.scope_mode())
 
-rp.lock.oscA_sw = 'cos_ref'
-rp.lock.oscB_sw = 'sin_ref'
+rp.lock.oscA_sw = 'sq_ref'
+rp.lock.oscB_sw = 'sq_quad'
 
-rp.lock.gen_mod_hp = 255
+rp.lock.gen_mod_sqp = 322499    # f = 125 MHz / (2*(322499+1)) = 193.8 Hz
 
-# trigger on the rising edge of channel A (cos_ref) at 0, 20 samples before the trigger
+# trigger on the rising edge of channel A (sq_ref) at 0, 20 samples before the trigger
 rp.osc.measure('A_rising', dec=256 , trig_pos=20 , threshold=0, wait=True)
 
 rp.wait_osc_finish()   # (already finished: wait=True above)
@@ -60,10 +62,10 @@ rp.plot_meas()
 #%% get the data  #############################################################
 
 
-rp.lock.oscA_sw = 'cos_ref'
-rp.lock.oscB_sw = 'sin_ref'
+rp.lock.oscA_sw = 'sq_ref'
+rp.lock.oscB_sw = 'sq_quad'
 
-rp.lock.gen_mod_hp = 255
+rp.lock.gen_mod_sqp = 322499    # 193.8 Hz
 
 # measure + wait + curv in one call. raw=False: Volts
 tt, ch1, ch2 = rp.acquire('A_rising', dec=256 , trig_pos=20, raw=False)
@@ -100,10 +102,10 @@ print('trig_mode:', rp.scope_mode())
 
 
 
-rp.lock.oscA_sw = 'cos_ref'
-rp.lock.oscB_sw = 'sin_ref'
+rp.lock.oscA_sw = 'sq_ref'
+rp.lock.oscB_sw = 'sq_quad'
 
-rp.lock.gen_mod_hp = 255
+rp.lock.gen_mod_sqp = 322499    # 193.8 Hz
 
 rp.osc.measure('A_rising', dec=256 , trig_pos=20 , wait=True)
 
@@ -139,19 +141,21 @@ plt.plot(tt,ch1,tt,ch2)
 #%% Lock-in: input, frequency, phase, filters, gains  #########################
 
 rp.set_signal('in1')                 # lock-in input (signal_sw)
-print('f =', rp.set_freq_hz(10e3), 'Hz')          # closest modulation frequency (gen_mod_hp)
-print('f =', rp.set_freq(255), 'Hz')               # or with the register value
-print('phase =', rp.set_phase(630), 'deg')         # cos_1f..3f phase (2520 = 360 deg)
+print('f =', rp.set_freq_hz(10e3), 'Hz')          # closest square frequency with sq_quad at 90 deg (gen_mod_sqp odd)
+print('f =', rp.set_freq(1), 'Hz')                 # or with the register value: 1 -> 31.25 MHz (the maximum with quadrature)
+print('f =', rp.set_freq(1249), 'Hz')              # 50 kHz
+print('phase =', rp.set_phase(625), 'deg')         # sq_phas / sqF delay in ticks (period 2500 ticks: 90 deg)
+print('phase =', rp.set_phase(90, units='deg'), 'deg')
 rp.set_modulation_amplitud(-1, ch='out1')          # -1: no modulation added to OUT1
 
-rp.set_lpf(tau_exponent=15, order=2, line='ref')   # X, Y: tau = 8 ns * 2**15 = 262 us, 2nd order
-rp.set_lpf(tau_exponent=18, order=1, line='all')   # the four lines
+rp.set_lpf(tau_exponent=15, order=2, line='xy')    # sqX, sqY: tau = 8 ns * 2**15 = 262 us, 2nd order
+rp.set_lpf(tau_exponent=18, order=1, line='all')   # sqX, sqY and sqF
 print(rp.get_lpf())                                # dict name -> (tau [s], order)
-print(rp.get_lpf('ref'))
+print(rp.get_lpf('xy'))
 
-rp.set_gain('ref', 'x32')            # Xo, Yo = X, Y * 32
-print('X, Y [V] =', rp.get_XY())
-print('X, Y, F1, F2, F3 [int] =', rp.get_XY(units='int', F=True))
+rp.set_gain('xy', 'x32')             # sqXo, sqYo = sqX, sqY * 32
+print('sqX, sqY [V] =', rp.get_XY())
+print('sqX, sqY, sqF [int] =', rp.get_XY(units='int', F=True))
 
 
 #%% PID  ######################################################################
@@ -160,13 +164,13 @@ rp.set_pid('A', sw='error', sp=0, kp=0, ki=0, kd=0, PSR='/1024', ISR='537 ms', D
 print(rp.get_pid('A'))
 rp.pid_reset('A')                    # integrator reset
 
-rp.lock.error_sw = 'Yo'              # error signal = Yo
+rp.lock.error_sw = 'sqYo'            # error signal = sqYo
 rp.lock.out1_sw  = 'ctrl_A'          # OUT1 = PID A + ramp A
 
 
 #%% Ramp (scan)  ##############################################################
 
-# Same ramp as the lock_mode config (test_files/lock_in+pid_harmonic__lock_mode.json): +-5000 counts with
+# Same ramp as the lock_mode config (test_files/lock_in+pid_square__lock_mode.json): +-5000 counts with
 # step=400 gives a triangle of ~64 ms (scan floor every ~64 ms), so the 16.58 ms time trigger of the Lock cell
 # below falls inside the rising half. ramp_step is a divider of the period: a smaller step is a FASTER ramp
 # (step=100, +-4000 gives ~12.9 ms, shorter than 16.58 ms: the time trigger would never fire).
@@ -182,17 +186,17 @@ print(rp.lock_status())
 # (set_modulation_amplitud(-1)), changed frequency, phase, filters and gain, and left PID A with kp = ki = 0.
 # Without modulation there is no error signal (the level trigger never fires) and with kp = ki = 0 there is no
 # feedback (the lock "closes", LOCKED, but holds nothing). Restore the lock-in and PID A of the lock_mode config
-# (test_files/lock_in+pid_harmonic__lock_mode.json, the one of the lock tests with dummy_simulator) first:
+# (test_files/lock_in+pid_square__lock_mode.json, the one of the lock tests with dummy_simulator) first:
 RESTORE_LOCK_MODE = True
 if RESTORE_LOCK_MODE:
     rp.set_signal('in1')                               # lock-in input
-    rp.set_freq(0)                                     # gen_mod_hp 0: 49.603 kHz
+    rp.set_freq(1249)                                  # gen_mod_sqp 1249: 50 kHz (31.25 MHz: rp.set_freq(1))
     rp.set_phase(0)
-    rp.set_modulation_amplitud(100, ch='out1')         # A Out1 = 100 (as lock_mode)
+    rp.set_modulation_amplitud(100, ch='out1')         # A Out1 = 100 (as lock_mode): OUT1 +-50 counts
     rp.set_modulation_amplitud(-1, ch='out2')
-    rp.set_lpf(tau_exponent=15, order=2, line='ref')   # X, Y: 262 us, 2nd order
-    rp.set_gain('ref', 'x32')
-    rp.lock.error_sw = 'Yo'                            # error signal = Yo
+    rp.set_lpf(tau_exponent=15, order=2, line='xy')    # sqX, sqY: 262 us, 2nd order
+    rp.set_gain('xy', 'x32')
+    rp.lock.error_sw = 'sqYo'                          # error signal = sqYo (sqXo or sqFo, depending on the phase)
     rp.set_pid('A', sw='error', sp=0, kp=-500, ki=-20, kd=0, PSR=3, ISR=8, DSR=0, SAT=13)
     rp.pid_reset('A')
     rp.lock.out1_sw  = 'ctrl_A'                        # OUT1 = PID A + ramp A (+ modulation)
@@ -276,8 +280,8 @@ def REgtoIP(val):
     return f'{val&255}.{(val>>8)&255}.{(val>>8*2)&255}.{(val>>8*3)&255}'
 
 
-rp.lock.oscA_sw  = 'sin_ref'
-rp.lock.oscB_sw  = 'cos_3f'
+rp.lock.oscA_sw  = 'sq_ref'
+rp.lock.oscB_sw  = 'sqXo'
 
 
 

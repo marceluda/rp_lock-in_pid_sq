@@ -1,8 +1,17 @@
 # Using the App from the web interface
 
-How to use `lock_in+pid_harmonic` **v2.3.17** from the browser, panel by panel, and the usual procedures:
+How to use `lock_in+pid_square` **v2.0.0** from the browser, panel by panel, and the usual procedures:
 scan, see a peak, get an error signal with the lock-in, close a lock and check it. Technical data of each
 instrument is in [App.md](App.md); registers in [FPGA.md](FPGA.md).
+
+> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
+> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
+> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
+> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
+> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
+> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
+> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
+> of the harmonic App.
 
 - [Opening the App](#opening-the-app)
 - [Layout of the page](#layout-of-the-page)
@@ -29,7 +38,7 @@ simulated peak made by `dummy_simulator` on a second board) and while writing th
 ## Opening the App
 
 Install the App (see the [README](../README.md#installation)) and open
-`http://rp-XXXXXX.local/lock_in+pid_harmonic/` (or choose it in the main menu of the Red Pitaya). The page
+`http://rp-XXXXXX.local/lock_in+pid_square/` (or choose it in the main menu of the Red Pitaya). The page
 starts the App (loads the FPGA and the C controller) and restores the state of the previous session of the
 same browser tab. Use a single tab per board (see [Several clients and Restart](#several-clients-and-restart)).
 
@@ -145,7 +154,7 @@ The main part of the panel (from top to bottom):
 - **State label**: OFF / ARMED / LOCKED and the number of locks since the FPGA was loaded.
 - **Capture Lock** (on by default): every lock request from the page captures the closing of the loop in
   the scope and freezes the trace. **Fire on click** (on by default): with *Choose from graph*, a click on
-  the plot sets the trigger value and fires *Trigger Lock*. Design: [`lock_capture.md`](../lock_in+pid_harmonic/doc/lock_capture.md).
+  the plot sets the trigger value and fires *Trigger Lock*. Design: [`lock_capture.md`](../lock_in+pid_square/doc/lock_capture.md).
 - **config** (open it with its title):
 
 ![Lock Control config](.Usage/panel_lock_control_config.jpg)
@@ -168,7 +177,7 @@ The main part of the panel (from top to bottom):
     *RL reset*. Not tested on this version (see [App.md](App.md#re-lock-and-step-response)).
   - Step response: *Jump ctrl_A*, *Jump ctrl_B*, *Freeze during step* (A/B out, A/B int), *Start Step Responce*.
 
-How the lock control works inside: [`lock_control.md`](../lock_in+pid_harmonic/doc/lock_control.md).
+How the lock control works inside: [`lock_control.md`](../lock_in+pid_square/doc/lock_control.md).
 
 ### Streaming
 
@@ -231,7 +240,7 @@ used from the UI. Those conversions are:
 ## Procedures
 
 These procedures follow `test_files/lock_test.md`, the procedure used to test every version on the board.
-The example numbers are those of the test configurations `test_files/lock_in+pid_harmonic__scan_mode.json`
+The example numbers are those of the test configurations `test_files/lock_in+pid_square__scan_mode.json`
 and `__lock_mode.json`: a system with a resonance (a peak) whose control input is OUT1 and whose response is
 measured on IN1.
 

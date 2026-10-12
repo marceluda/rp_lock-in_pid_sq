@@ -1,7 +1,15 @@
 # The App: instruments and specifications
 
-`lock_in+pid_harmonic` ("Harmonic Lock-in+PID") **v2.3.17** for the Red Pitaya STEMlab 125-14,
-Ecosystem 2.0 (tested on RedPitaya_OS 2.04-35). Branch `devel2.0`.
+`lock_in+pid_square` ("Square Lock-in+PID") **v2.0.0** for the Red Pitaya STEMlab 125-14,
+Ecosystem 2.0 (RedPitaya_OS 2.04-35). Branch `devel2.0`.
+
+It is `lock_in+pid_harmonic` v2.3.18 (rp_lock-in_pid_h) with the harmonic modulation generator and lock-in
+replaced by a **square** generator and lock-in like the square part of the original
+[Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid) App (`gen_mod2`, `sq_ref`/`sq_quad`/`sq_phas`,
+sqX/sqY/sqF), with the reference and quadrature pair up to **31.25 MHz** (125 MHz / 4). Everything else
+(oscilloscope, PIDs, ramp, lock control in the FPGA, Capture Lock, bus fixes, streaming, HTTP remote control)
+is the one of v2.3.18. The measured values quoted below for the common instruments come from the tests of
+lock_in+pid_harmonic; the square generator and lock-in are verified in simulation (to be tested on the board).
 
 This page describes what the App contains and its technical data. How to use it from the web page is in
 [Usage.md](Usage.md); how the parts are connected in [Structure.md](Structure.md); the registers in
@@ -11,8 +19,8 @@ This page describes what the App contains and its technical data. How to use it 
 - [General data](#general-data)
 - [Oscilloscope](#oscilloscope)
 - [Inputs and outputs](#inputs-and-outputs)
-- [Modulation generator](#modulation-generator)
-- [Harmonic lock-in amplifier](#harmonic-lock-in-amplifier)
+- [Square modulation generator](#square-modulation-generator)
+- [Square lock-in amplifier](#square-lock-in-amplifier)
 - [Ramp generator (scan)](#ramp-generator-scan)
 - [Error signal and PIDs](#error-signal-and-pids)
 - [Lock control (auto-lock)](#lock-control-auto-lock)
@@ -30,10 +38,10 @@ with selectors, so that a measurement or a feedback loop is configured instead o
 
 | Instrument | What it does | Main registers |
 |---|---|---|
-| **Oscilloscope** | Two channels, any of 25 internal signals, 16384 samples, time spans from 131 µs to 68.7 s, external trigger from internal events | scope block 0x40100000, `oscA_sw`, `oscB_sw`, `trig_sw` |
-| **Inputs / outputs** | Routing of 16 signals to the fast outputs OUT1/OUT2, with optional modulation added | `out1_sw`, `out2_sw`, `mod_out1`, `mod_out2` |
-| **Modulation generator** | Harmonic local oscillator: `sin_ref`, `cos_ref` and `cos_1f`, `cos_2f`, `cos_3f` with adjustable phase, 3 Hz – 49.6 kHz | `gen_mod_hp`, `gen_mod_phase` |
-| **Harmonic lock-in** | Demodulation of one input at 1f (X, Y and F1 at an arbitrary phase), 2f (F2) and 3f (F3), with 1st/2nd order low-pass filters and gains | `signal_sw`, `lpf_F*`, `sg_amp*` |
+| **Oscilloscope** | Two channels, any of 21 internal signals, 16384 samples, time spans from 131 µs to 68.7 s, external trigger from internal events | scope block 0x40100000, `oscA_sw`, `oscB_sw`, `trig_sw` |
+| **Inputs / outputs** | Routing of 16 signals to the fast outputs OUT1/OUT2, with optional square modulation added (e.g. OUT1 = ctrl_A + modulation) | `out1_sw`, `out2_sw`, `mod_out1`, `mod_out2` |
+| **Square modulation generator** | Square local oscillator: `sq_ref`, `sq_quad` (90°) and `sq_phas` (adjustable delay), 0.029 Hz – 31.25 MHz with quadrature (62.5 MHz without) | `gen_mod_sqp`, `gen_mod_phase_sq` |
+| **Square lock-in** | Demodulation of one input with the three square references (sqX, sqY, sqF: ±1 multiplication), 1st/2nd order low-pass filters from 64 ns to 8.6 s and gains | `signal_sw`, `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF` |
 | **Ramp generator** | Triangle or sawtooth scan on two outputs with a fixed ratio (A and B) | `ramp_*` |
 | **Two PIDs** | PID A and PID B, wide range of gains and time constants, integrator saturation, freeze and reset | `pidA_*`, `pidB_*`, `error_sw`, `error_offset` |
 | **Lock control** | Automatic transition from scan (open loop) to lock (closed loop) at a time, a level or immediately, executed by the FPGA in one clock | `lock_control`, `lock_status`, `lock_trig_*` |
@@ -57,7 +65,7 @@ ctrl_B = PID B out + Ramp B (+ jump B)     → usually sent to OUT2
 | Ecosystem | 2.0 (RedPitaya_OS 2.04-35 tested); FPGA loaded by `fpga.sh` with `fpgautil` | `fpga.sh`, test reports |
 | FPGA clock | 125 MHz (8 ns) | `src/fpga.c` l. 50, top |
 | ADC / DAC | 14 bit, 125 MS/s; signals are 14-bit signed, 8192 counts = 1 V | `lock.v`, `index.html` |
-| FPGA timing | does not close (WNS −8.954 ns in v2.3.17, in the long paths of the loop: PID → scope muxes / outputs), as in the 2015.2 design; works in practice. Bus reads of the lock module are exact since v2.3.17 ([FPGA.md](FPGA.md#lock-module-0x40600000)) | CHANGELOG v2.3.10, v2.3.17, `devAgent.md` |
+| FPGA timing | does not close (as lock_in+pid_harmonic: long paths of the loop, PID → scope muxes / outputs; see the CHANGELOG of v2.0.0 for the WNS of this design), works in practice in the harmonic App. Bus reads of the lock module are exact ([FPGA.md](FPGA.md#lock-module-0x40600000)) | CHANGELOG, `devAgent.md` |
 
 ## Oscilloscope
 
@@ -66,11 +74,11 @@ the ADCs). See [FPGA.md](FPGA.md#oscilloscope-0x40100000).
 
 | Item | Value |
 |---|---|
-| Channels | 2 (any of: 0, in1, in2, error, ctrl_A, ctrl_B, Ramp A/B, pidA/B_in, PID A/B out, sin_ref, cos_ref, cos_1f/2f/3f, Xo, Yo, F1o, F2o, F3o, signal_i, out1, out2) |
+| Channels | 2 (any of: 0, in1, in2, error, ctrl_A, ctrl_B, Ramp A/B, pidA/B_in, PID A/B out, sq_ref, sq_quad, sq_phas, sqXo, sqYo, sqFo, signal_i, out1, out2) |
 | Memory | 16384 samples per channel; the web page gets 1024 points (`SIGNAL_LENGTH`, `src/main.h`) |
 | Decimations (time range) | 1 (131 µs), 8 (1.05 ms), 64 (8.4 ms), 128 (16.8 ms), 256 (33.6 ms), 512 (67.1 ms), 1024 (134 ms), 8192 (1.07 s), 65536 (8.6 s), 524288 (68.7 s) — `src/fpga.c` l. 509-545; 20-bit decimation in the FPGA of this App |
 | Trigger sources | Channel 1, Channel 2, External; modes Auto, Normal, Single; edge rising/falling |
-| External trigger | Any of: pin DIO0_P, scan floor, scan ceil, start of the modulation period, out of lock, jump (step response), lock event ("Lock control trig") — `trig_sw` |
+| External trigger | Any of: pin DIO0_P, scan floor, scan ceil, start of the square modulation period, out of lock, jump (step response), lock event ("Lock control trig") — `trig_sw` |
 | Other | Averaging at decimation, anti-aliasing (equalization) filter bypass per channel, Raw mode (values in counts), save data as Python / Matlab / CSV |
 
 The time span of the 68.7 s range was verified on the board (v2.3.10, `reportes/lock-in_pid_h.md`).
@@ -80,69 +88,67 @@ The time span of the 68.7 s range was verified on the board (v2.3.10, `reportes/
 | Item | Value |
 |---|---|
 | Fast inputs IN1, IN2 | 14 bit; ±1 V (LV jumper) or ±20 V (HV); the gain setting of the UI only changes the scale of the display |
-| Fast outputs OUT1, OUT2 | 14 bit, ±1 V, 8192 counts = 1 V; any of 0, in1, in2, in1−in2, error, cos_1f, cos_2f, cos_3f, cos_ref, sin_ref, PID A out, PID B out, ctrl_A, ctrl_B, aux_A, aux_B |
-| Modulation added to the outputs | OUT1 + `cos_ref · mod_out1 / 2^13`, OUT2 + `sin_ref · mod_out2 / 2^13`, saturated to 14 bits; off with a negative `mod_out*` (`lock.v` l. 424-431) |
+| Fast outputs OUT1, OUT2 | 14 bit, ±1 V, 8192 counts = 1 V; any of 0, in1, in2, in1−in2, error, sq_ref, sq_quad, sq_phas, sqXo, sqYo, PID A out, PID B out, ctrl_A, ctrl_B, aux_A, aux_B |
+| Modulation added to the outputs | OUT1 ± `mod_out1 / 2` with `sq_ref`, OUT2 ± `mod_out2 / 2` with `sq_quad`, saturated to 14 bits; off with a negative `mod_out*`. Same peak amplitude as the harmonic modulation of lock_in+pid_harmonic for the same value. Typical use: OUT1 = `ctrl_A` (PID A + ramp) + modulation |
 | `in1 − in2` | difference saturated to 14 bits |
 | `aux_A`, `aux_B` | two constants (−8192..8191) usable as signals |
 | Slow outputs AO0-AO3 | **not driven by the lock module in this version** (the UI shows four selectors that have no effect). See [FPGA.md](FPGA.md#other-blocks) |
-| Digital I/O | DIO0_P: trigger input; DIO6_N: ramp direction output; DIO7_N: digital modulation (always 0) |
+| Digital I/O | DIO0_P: trigger input; DIO6_N: ramp direction output; DIO7_N: digital modulation = `sq_ref` (TTL reference, as in lock_in+pid) |
 
-## Modulation generator
+## Square modulation generator
 
-`lock/gen_mod_h.v`. A table of 630 points (one quarter of period) is read forwards and backwards to make
-a period of **2520 points**; each point lasts `gen_mod_hp + 1` clock ticks.
-
-| Item | Value |
-|---|---|
-| Frequency | f = 125 MHz / (2520 · (`gen_mod_hp` + 1)) |
-| Range | `gen_mod_hp` = 0 → **49.603 kHz**; 16383 → **3.03 Hz** |
-| Phase | `gen_mod_phase` 0..2519 → 0..359.86°, step 360°/2520 = 0.143°; applies to `cos_1f`, `cos_2f`, `cos_3f` |
-| Amplitude of the references | ±4094 counts (≈ ±0.5 V) — `data_*_ss.dat` |
-| Signals | `cos_ref` (phase 0), `sin_ref` (quadrature), `cos_1f`, `cos_2f` (2f), `cos_3f` (3f) |
-| Modulation on an output | amplitude ≈ `mod_out / 2` counts = `mod_out / 16384` V; max `mod_out` = 8191 → ≈ 0.5 V |
-
-Example: `gen_mod_hp = 255` → 193.8 Hz (`example_usage.py`). The web UI shows the resulting period and
-frequency below the field, and the phase in degrees and radians.
-
-## Harmonic lock-in amplifier
-
-`lock.v` l. 707-902, `lock/LP_filter3.v`.
-
-```
-signal_i ─┬─ × cos_ref ─ LPF(F0) ─ X_28 ─ ×2^sg_amp0 ─ sat ─ Xo
-          ├─ × sin_ref ─ LPF(F0) ─ Y_28 ─ ×2^sg_amp0 ─ sat ─ Yo
-          ├─ × cos_1f  ─ LPF(F1) ─ F1_28 ─ ×2^sg_amp1 ─ sat ─ F1o
-          ├─ × cos_2f  ─ LPF(F2) ─ F2_28 ─ ×2^sg_amp2 ─ sat ─ F2o
-          └─ × cos_3f  ─ LPF(F3) ─ F3_28 ─ ×2^sg_amp3 ─ sat ─ F3o
-```
+`lock/gen_mod_sq.v` (v2.0.0, square part of `gen_mod2.v` of lock_in+pid written again). One counter runs over the
+whole period of P = 2·(`gen_mod_sqp` + 1) ticks; the three outputs are computed from the same counter value in a
+3-stage pipeline, so their relative timing is exact.
 
 | Item | Value |
 |---|---|
-| Input `signal_i` | in1, in2, in1−in2, cos_ref, sin_ref, cos_1f, aux_A, Ramp A |
-| Outputs | `Xo`, `Yo` (1f, phase 0 and 90°), `F1o` (1f at `gen_mod_phase`), `F2o` (2f), `F3o` (3f); 14-bit, saturated |
-| Scale | with gain ×1 the outputs read the **amplitude** (in counts) of the component of the input in phase with each reference: an input `A·cos_ref/4094` gives `Xo ≈ A`, `Yo ≈ 0`; an input in phase with `sin_ref` gives `Yo ≈ A` (φ = +90°). Times 2^`sg_amp`. Derived from the RTL (reference ±4094 ≈ 2^12, products shifted 21 bits) and consistent with the loopback test OUT1 → IN1: `cos_ref` → X = 461 mV, φ = 1.6°; `sin_ref` → Y = R = 461 mV, φ = 91.6° (`reportes/lock-in_pid_h.md`) |
-| Gains | `sg_amp0` ×1 .. ×512k (UI; register up to 2^31); `sg_amp1..3` ×1 .. ×512 (UI; register up to 2^15) |
-| Low-pass filters | 4 independent: X&Y share `lpf_F0`, then F1, F2, F3. Order 0 (off), 1 or 2 (cascade of identical 1st-order stages) |
-| Time constants | τ = 8 ns · 2^(14+n), n = 0..15 |
-| R and φ | computed in the web page from X and Y: R = √(X² + Y²), φ = atan2(Y, X) |
-| Registers with more resolution | `X_28`, `Y_28`, `F1_28`..`F3_28` (28 bit, before the gain): `X_28 ≈ A·cos φ · 2^11` |
+| Frequency | f = 125 MHz / (2·(`gen_mod_sqp` + 1)) |
+| Range | `gen_mod_sqp` = 1 → **31.25 MHz** (P = 4 ticks); 0 → 62.5 MHz (no quadrature); 1249 → 50 kHz; 2³²−1 → 0.029 Hz |
+| `sq_ref` | 1 (+4096) during the first half of the period, 0 (−4096) during the second |
+| `sq_quad` | `sq_ref` delayed by floor(P/4) ticks: **exactly 90° when `gen_mod_sqp` is odd** (P multiple of 4); with an even value the delay is rounded down (`gen_mod_sqp` = 2: 60°) |
+| `sq_phas` | `sq_ref` delayed by `gen_mod_phase_sq` ticks, 0..P−1 (360°·n/P; at 31.25 MHz steps of 90°); larger values act as P−1 |
+| Amplitude of the references | ±4096 counts (≈ ±0.5 V) |
+| Trigger | "Square mod." (`trig_sw` = 8): one pulse per period, at the rising edge of `sq_ref` |
+| Modulation on an output | ±`mod_out`/2 counts (square), max `mod_out` = 8191 → ±0.5 V |
+| Digital output | `sq_ref` on DIO7_N |
 
-Low-pass filter table (`LP_filter3.v`, also the labels of the UI):
+At 31.25 MHz the DAC samples of `sq_ref` (+A, +A, −A, −A) are exactly those of a sinusoid of amplitude √2·A at
+fs/4, so the analog output is a sine wave (≈ 1.27·A after the DAC sample-and-hold), not a square wave.
 
-| n | τ | f = 1/(2πτ) | n | τ | f = 1/(2πτ) |
-|---|---|---|---|---|---|
-| 0 | 131 µs | 1.21 kHz | 8 | 33.6 ms | 4.74 Hz |
-| 1 | 262 µs | 607 Hz | 9 | 67.1 ms | 2.37 Hz |
-| 2 | 524 µs | 304 Hz | 10 | 134 ms | 1.19 Hz |
-| 3 | 1.05 ms | 152 Hz | 11 | 268 ms | 593 mHz |
-| 4 | 2.10 ms | 75.9 Hz | 12 | 537 ms | 296 mHz |
-| 5 | 4.19 ms | 37.9 Hz | 13 | 1.07 s | 148 mHz |
-| 6 | 8.39 ms | 19.0 Hz | 14 | 2.15 s | 74.1 mHz |
-| 7 | 16.8 ms | 9.49 Hz | 15 | 4.29 s | 37.1 mHz |
+The web UI accepts the half period as a number, a frequency ("50 kHz", "31.25 MHz") or a period ("20 us") and the
+phase as ticks, an angle ("90 deg", "0.5 pi") or a delay; below the fields it shows f, T, the number of ticks per
+period, the quadrature angle and the phase in degrees.
 
-To reject the modulation the cut-off frequency has to be well below the modulation frequency (2f is the
-main component of the product). Example: modulation at 49.6 kHz and n = 1 (607 Hz), order 2 (the test
-configuration `lock_mode`).
+## Square lock-in amplifier
+
+`lock.v` ("Signal Processing"), `lock/LP_filter_sq.v`.
+
+```
+signal_i ─┬─ ×(±1, sq_ref ) ─ LPF(lpf_sq ) ─ sqX_28 ─ ×2^sg_amp_sq  ─ sat ─ sqXo
+          ├─ ×(±1, sq_quad) ─ LPF(lpf_sq ) ─ sqY_28 ─ ×2^sg_amp_sq  ─ sat ─ sqYo
+          └─ ×(±1, sq_phas) ─ LPF(lpf_sqF) ─ sqF_28 ─ ×2^sg_amp_sqF ─ sat ─ sqFo
+```
+
+| Item | Value |
+|---|---|
+| Input `signal_i` | in1, in2, in1−in2, sq_ref, sq_quad, sq_phas, aux_A, Ramp A |
+| Outputs | `sqXo`, `sqYo` (reference and quadrature), `sqFo` (reference delayed by `gen_mod_phase_sq`); 14-bit, saturated |
+| Scale | `sq?_28 = mean(±signal_i)·2^13`; with gain ×1 `sq?o` = mean(±signal_i) in counts: a square input of amplitude A in phase with the reference gives `sqXo = A`; a sinusoidal input of amplitude A and phase φ gives `sqXo = (2/π)·A·cos φ`, `sqYo = (2/π)·A·sin φ` |
+| Gains | `sg_amp_sq` (sqXo, sqYo) and `sg_amp_sqF` (sqFo): ×1 .. ×32k |
+| Low-pass filters | 2 independent: sqX & sqY share `lpf_sq`, sqF uses `lpf_sqF`. Order 0 (off), 1 or 2 (cascade of identical 1st-order stages) |
+| Time constants | τ = 8 ns · 2^(n+3), n = 0..27: 64 ns .. 8.59 s (cut-off 2.49 MHz .. 18.5 mHz) |
+| Latency | 2 ticks from `sq_ref` to OUT1 and back to the product (simulation, out1 looped to in1 inside the FPGA); the analog path adds its delay: at 31.25 MHz each 8 ns is 90° |
+| R and φ | computed in the web page from sqX and sqY: R = √(X² + Y²), φ = atan2(Y, X) |
+
+At 31.25 MHz the product of a sinusoid with the square reference has components at DC and at 62.5 MHz (fs/2,
+alternating sign): a filter of a few hundred ns already removes it, so the loop bandwidth can be much larger than
+with the harmonic App (whose maximum modulation was 49.6 kHz). At low frequency the square reference also
+demodulates the odd harmonics of the input (3f with weight 1/3, 5f with 1/5...).
+
+To use the phase with fine resolution at 31.25 MHz (only 4 ticks per period), combine sqX and sqY (R|Phase
+display) or choose sqXo / sqYo / sqFo and the sign of the PID gains: for locking to the centre of a peak the
+position of the zero crossing does not depend on the phase, only the slope does.
 
 ## Ramp generator (scan)
 
@@ -163,7 +169,7 @@ configuration `lock_mode`).
 
 `lock.v` l. 538-563 and 907-997, `lock/lock_pid_block.v`.
 
-The **error** is one of 0, Xo, Yo, F1o, F2o, F3o, in1, in1−in2, minus `error_offset`. Each PID can take
+The **error** is one of 0, sqXo, sqYo, sqFo, signal_i, in2, in1, in1−in2, minus `error_offset`. Each PID can take
 the error or one of 15 other signals (`pidX_sw`).
 
 PID equation, with e = `sp − in` (the sign of the gains selects the sign of the feedback):
@@ -189,7 +195,7 @@ Example (test configuration `lock_mode`): PID A, kp = −500 with /1024 → −0
 ## Lock control (auto-lock)
 
 The lock sequence runs in the FPGA (`lock/lock_ctrl.v`, since v2.3.13). Full design:
-[`lock_control.md`](../lock_in+pid_harmonic/doc/lock_control.md).
+[`lock_control.md`](../lock_in+pid_square/doc/lock_control.md).
 
 | Item | Value |
 |---|---|
@@ -200,7 +206,7 @@ The lock sequence runs in the FPGA (`lock/lock_ctrl.v`, since v2.3.13). Full des
 | Triggers | **Time**: `lock_trig_time` ticks (8 ns) after the scan floor, 0..2³²−1 (up to 34.36 s; 32-bit counter since v2.3.15, it was 17.18 s); **Level**: a signal crosses `lock_trig_val` upwards or downwards; **Level+time**: level crossing after the time |
 | Latency | the change happens in the same clock tick as the trigger (8 ns) |
 | Status | `lock_status`: armed, locked, effective enables, count of locks |
-| Capture | the lock event is a scope trigger source ("Lock control trig"); the web page uses it to capture the closing of the loop ([`lock_capture.md`](../lock_in+pid_harmonic/doc/lock_capture.md)) |
+| Capture | the lock event is a scope trigger source ("Lock control trig"); the web page uses it to capture the closing of the loop ([`lock_capture.md`](../lock_in+pid_square/doc/lock_capture.md)) |
 
 Measured on the board against a simulated peak (`dummy_simulator` on a second Red Pitaya, LOCK MODE
 procedure of `test_files/lock_test.md`, v2.3.11 to v2.3.17; `reportes/lock-in_pid_h_lock_test/`):
@@ -245,7 +251,7 @@ panel in counts (`src/lock.c` l. 320-322).
 
 ## Remote control
 
-- **HTTP** (recommended): `http://rp-XXXXXX.local/lock_in+pid_harmonic/lock` and `.../osc` read and write
+- **HTTP** (recommended): `http://rp-XXXXXX.local/lock_in+pid_square/lock` and `.../osc` read and write
   the registers of the lock module and of the scope, and read the scope memory; `POST /data` stops or restarts
   the scope of the C controller. Python client `resources/remote_control/http_version/control_finn.py`
   (v2.3.15-2.3.17: triggered acquisitions on the 2.0 scope, PID / ramp / lock-in / lock helpers, host name

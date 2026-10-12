@@ -1,8 +1,17 @@
 # Internal structure
 
-How `lock_in+pid_harmonic` v2.3.17 is built: the three layers (web page, server, FPGA), how they talk, and
+How `lock_in+pid_square` v2.0.0 is built: the three layers (web page, server, FPGA), how they talk, and
 how the instruments are connected inside the FPGA. Registers: [FPGA.md](FPGA.md). Specifications:
 [App.md](App.md). Source tree and build: [Devel.md](Devel.md).
+
+> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
+> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
+> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
+> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
+> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
+> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
+> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
+> of the harmonic App.
 
 - [Layers](#layers)
 - [Web page ↔ server](#web-page--server)
@@ -35,7 +44,7 @@ flowchart LR
   end
   B -- "GET/POST /data (JSON)<br/>/bazaar, /get_client_id" --> N
   N --> C
-  B -- "GET /lock_in+pid_harmonic/lock, /osc, ..." --> L
+  B -- "GET /lock_in+pid_square/lock, /osc, ..." --> L
   P -- "GET /lock, /osc" --> L
   P -- "POST /data<br/>(trig_mode only)" --> N
   L --> T
@@ -48,7 +57,7 @@ flowchart LR
 - **Client**: `index.html` (HTML + jQuery + Flot, all in one file) runs in the browser. It polls the
   server, draws the scope and sends parameter changes.
 - **Server**: the nginx of the Red Pitaya Ecosystem loads `controllerhf.so` (the App controller) when the
-  App is started with `/bazaar?start=lock_in+pid_harmonic`; on Ecosystem 2.0 the FPGA image `fpga.bit.bin`
+  App is started with `/bazaar?start=lock_in+pid_square`; on Ecosystem 2.0 the FPGA image `fpga.bit.bin`
   is loaded at the start by `fpga.sh` (`fpgautil`). The App also adds its own HTTP endpoints, written in
   Lua inside `nginx.conf`, which run the small C tools of `c/`.
 - **Hardware**: the FPGA (`lock.v` and the Red Pitaya scope) does all the real-time processing. The
@@ -58,23 +67,23 @@ flowchart LR
 
 | Endpoint | Method | Who | What |
 |---|---|---|---|
-| `/bazaar?start=lock_in+pid_harmonic` / `?stop=` | GET | page at start / Restart | start the App (controller + FPGA) / stop the loaded App |
+| `/bazaar?start=lock_in+pid_square` / `?stop=` | GET | page at start / Restart | start the App (controller + FPGA) / stop the loaded App |
 | `/data` | GET | page, polling (~50 ms; 500 ms with a frozen capture) | parameters (JSON `datasets.params`) and the two scope traces (`datasets.signals`, 1024 points) |
 | `/data` | POST | page, on each change; `control_finn.py` (`trig_mode` only) | changed parameters only, in chunks of at most 600 bytes, with retries (Ecosystem 2.0 hangs with large bodies). The handler only reads a body that arrives with the headers, and every POST leaves a CLOSE-WAIT connection in nginx ([Remote.md](Remote.md#known-issue-of-the-ecosystem-post-data-leaves-connections-open)) |
 | `/get_client_id`, `/set_client_id` | GET/POST | page | claim the board like the factory Apps; detect another client |
-| `/lock_in+pid_harmonic/lock?…` | GET | page (streaming IP), Python | run `c/lock`: read/write lock registers ([Remote.md](Remote.md)) |
-| `/lock_in+pid_harmonic/osc?…` | GET | Python | run `c/osc`: read/write scope registers (with `TrgUnlock` since v2.3.15), dump the scope memory |
-| `/lock_in+pid_harmonic/get_ip` | GET | page (IP button) | IP of the client |
-| `/lock_in+pid_harmonic/calib` | GET | Python | output of `calib -rv` (calibration of the board) |
-| `/lock_in+pid_harmonic/streaming` | GET | page (Prepare Streaming) | start `c/streaming` detached (`c/stream_start.sh`) |
-| `/lock_in+pid_harmonic/check_streaming` | GET | page | 0 if `c/streaming` is running, 1 if not |
-| `/lock_in+pid_harmonic/restart_server` | GET | — | `systemctl restart redpitaya_nginx` |
-| `/lock_in+pid_harmonic/reload_fpga` | GET | — | 0.9x only; on 2.0 answers HTTP 501 and does not touch the FPGA |
+| `/lock_in+pid_square/lock?…` | GET | page (streaming IP), Python | run `c/lock`: read/write lock registers ([Remote.md](Remote.md)) |
+| `/lock_in+pid_square/osc?…` | GET | Python | run `c/osc`: read/write scope registers (with `TrgUnlock` since v2.3.15), dump the scope memory |
+| `/lock_in+pid_square/get_ip` | GET | page (IP button) | IP of the client |
+| `/lock_in+pid_square/calib` | GET | Python | output of `calib -rv` (calibration of the board) |
+| `/lock_in+pid_square/streaming` | GET | page (Prepare Streaming) | start `c/streaming` detached (`c/stream_start.sh`) |
+| `/lock_in+pid_square/check_streaming` | GET | page | 0 if `c/streaming` is running, 1 if not |
+| `/lock_in+pid_square/restart_server` | GET | — | `systemctl restart redpitaya_nginx` |
+| `/lock_in+pid_square/reload_fpga` | GET | — | 0.9x only; on 2.0 answers HTTP 501 and does not touch the FPGA |
 
 The page keeps three copies of the parameters (`params.orig` from the server, `params.local` edited, the
 unsent changes) and sends only what changed. Read-only values (lock-in outputs, `lock_status`, monitor)
 are never sent. The page state is saved per tab (`sessionStorage`) and restored after a Restart; configs are
-saved in `localStorage` (key `lockConfig_lock_in+pid_harmonic`). A Config → load sends the whole config
+saved in `localStorage` (key `lockConfig_lock_in+pid_square`). A Config → load sends the whole config
 (`send_all`, 5-9 chunks) except the time-scale values derived by the server (`send_all_skip`: `forcex_flag`,
 `time_units`, `time_range`, `gui_xmin`, `gui_xmax`), and takes the window and units of the answer of the last
 chunk (`configLoadApplyX()`, v2.3.17).
@@ -110,7 +119,7 @@ flowchart TB
   decimates them to 1024 points; it also runs the auto-set (AUTO) and the measurements. Since v2.3.14 a POST
   without scope changes does not reset it, and a lock request that arms a Single waits until the scope is
   armed (`rp_osc_worker_wait_armed()`), which makes *Capture Lock* deterministic
-  ([`lock_capture.md`](../lock_in+pid_harmonic/doc/lock_capture.md) §3.2).
+  ([`lock_capture.md`](../lock_in+pid_square/doc/lock_capture.md) §3.2).
 - **`trig_mode` = 2 (Single)** puts the worker in its idle state: it resets and configures the scope once and
   then does not arm it (`src/main.c` `rp_set_params()`, `src/worker.c`). After `bazaar?start` the worker runs in
   Auto even with no page open; `control_finn.py` sets Single through `POST /data` before acquiring through
@@ -222,7 +231,7 @@ Main points (with the lines of `lock.v`):
 ### Lock control
 
 The state machine of `lock/lock_ctrl.v`, configured and commanded by `lock_control` and observed in
-`lock_status`. Full description: [`lock_control.md`](../lock_in+pid_harmonic/doc/lock_control.md).
+`lock_status`. Full description: [`lock_control.md`](../lock_in+pid_square/doc/lock_control.md).
 
 ```mermaid
 stateDiagram-v2
@@ -245,7 +254,7 @@ stateDiagram-v2
 The time trigger counts ticks from the last scan floor of the ramp (`ramp_floor_trig`); the level trigger
 watches the signal selected by `lock_trig_sw`. On entering LOCKED the FPGA emits `lock_ctrl_trig`, which is
 bit 7 of `trig_sw` ("Lock control trig"): the web page arms a Single acquisition on it to capture the lock
-(*Capture Lock*, [`lock_capture.md`](../lock_in+pid_harmonic/doc/lock_capture.md)).
+(*Capture Lock*, [`lock_capture.md`](../lock_in+pid_square/doc/lock_capture.md)).
 
 The sequence of a lock request from the page with Capture Lock:
 

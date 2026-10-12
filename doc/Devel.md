@@ -1,7 +1,16 @@
 # Development: building and modifying the App
 
-How to build, modify, test and install `lock_in+pid_harmonic` v2.3.17 (branch `devel2.0`). The internal
+How to build, modify, test and install `lock_in+pid_square` v2.0.0 (branch `devel2.0`). The internal
 structure is explained in [Structure.md](Structure.md) and the registers in [FPGA.md](FPGA.md).
+
+> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
+> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
+> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
+> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
+> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
+> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
+> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
+> of the harmonic App.
 
 - [Source tree](#source-tree)
 - [Software requirements](#software-requirements)
@@ -19,7 +28,7 @@ structure is explained in [Structure.md](Structure.md) and the registers in [FPG
 ## Source tree
 
 ```
-rp_lock-in_pid_h/
+rp_lock-in_pid_sq/
 ├── Makefile                 # all = App build + zip + tar into archive/
 ├── settings.sh              # environment for the C build (Vivado 2015.2 + Linaro)
 ├── _build_number            # BUILD_NUMBER=N (incremented by make clean_*), not versioned
@@ -34,7 +43,7 @@ rp_lock-in_pid_h/
 │   ├── streaming/           # TCP receiver for the streaming (server.c, read_bin.py)
 │   ├── process_web_download/, rp_cmds/, code_helpers/ (muxer generator, sin/cos tables)
 │   └── README.md            # streaming and remote control notes
-└── lock_in+pid_harmonic/    # the App (this folder is what is installed on the board)
+└── lock_in+pid_square/    # the App (this folder is what is installed on the board)
     ├── Makefile             # controller, c tools, FPGA, target/, zip, tar, upload
     ├── index.html           # web interface (HTML + JS in one file)
     ├── css/  js/            # styles, jquery.mousewheel, js.cookie
@@ -105,7 +114,7 @@ adapted (it sources `/opt/Xilinx/Vivado/2015.2/settings64.sh`).
 Load the C environment:
 
 ```bash
-cd rp_lock-in_pid_h
+cd rp_lock-in_pid_sq
 source settings.sh          # sources /opt/Xilinx/Vivado/2015.2/settings64.sh, adds Linaro to PATH,
                             # exports TOOLCHAIN_PATH and CROSS_COMPILE=arm-linux-gnueabihf-
 ```
@@ -116,19 +125,19 @@ whether `settings.sh` was sourced: both environments never mix.
 ## Building everything
 
 ```bash
-cd rp_lock-in_pid_h
+cd rp_lock-in_pid_sq
 source settings.sh
 LANG=C make
 ```
 
 This builds the controller, the `c/` tools and, if any FPGA source changed, the FPGA (about 30 min), then
-`target/` and the packages `archive/lock_in+pid_harmonic-<version>-<build>-devbuild.{zip,tar.gz}`.
+`target/` and the packages `archive/lock_in+pid_square-<version>-<build>-devbuild.{zip,tar.gz}`.
 
 A typical rebuild after changing only C or the web page (as devAgent does, FPGA untouched):
 
 ```bash
 source settings.sh
-make -C lock_in+pid_harmonic clean_app && LANG=C make
+make -C lock_in+pid_square clean_app && LANG=C make
 ```
 
 `clean_app` and `clean_fpga` increment the build number in `_build_number`.
@@ -139,11 +148,11 @@ Root `Makefile`:
 
 | Target | Action |
 |---|---|
-| `make` / `make all` | `make -C lock_in+pid_harmonic all zip tar` (packages in `archive/`) |
-| `make clean` | `make -C lock_in+pid_harmonic clean` |
-| `make upload` | `make -C lock_in+pid_harmonic upload` |
+| `make` / `make all` | `make -C lock_in+pid_square all zip tar` (packages in `archive/`) |
+| `make clean` | `make -C lock_in+pid_square clean` |
+| `make upload` | `make -C lock_in+pid_square upload` |
 
-`lock_in+pid_harmonic/Makefile`:
+`lock_in+pid_square/Makefile`:
 
 | Target | Action |
 |---|---|
@@ -152,12 +161,12 @@ Root `Makefile`:
 | `controllerhf.so` | builds three variants of the controller: `controllerhf_dbg.so` (DEBUG on), `controllerhf_rld.so` (RELOAD dock) and `controllerhf.so` (the one packaged), editing `src/main.h` / `src/main.c` with `sed` between builds |
 | `c_tools` | `make -C c all` (cross compiled `lock`, `osc`, `streaming`, `stream_tcp_osc_cmd`) |
 | `fpga` | `red_pitaya.bit` (from `fpga/`), `fpga.bit` (copy) and `fpga.bit.bin` (bootgen) |
-| `target/lock_in+pid_harmonic` | staging of the installable folder (also copies `upload_app.sh`, `resources/`, README, CHANGELOG; sets the version in `info.json` and `index.html`; removes `__pycache__`/`*.pyc`) |
+| `target/lock_in+pid_square` | staging of the installable folder (also copies `upload_app.sh`, `resources/`, README, CHANGELOG; sets the version in `info.json` and `index.html`; removes `__pycache__`/`*.pyc`) |
 | `zip`, `tar` | packages in `../archive/` |
 | `clean`, `clean_app`, `clean_fpga`, `clean_target` | clean all / C (`src`, `c`, `*.so`, target) / FPGA / target |
 | `upload`, `upload_bit`, `upload_html`, `upload_py` | copy to the board by SSH (needs `RPIP`, on the command line or in `../_settings.env`, see below; `check_rpip` stops if it is empty). Since v2.3.15 they depend only on `target/` (`upload_html` sends the `index.html` of `target/`, with the version), make the file system writable with the `rw` script of the OS (`/opt/redpitaya/sbin/rw` with `PATH_REDPITAYA` exported on 2.0, `/boot/sbin/rw` on 0.9x), `upload` keeps `fpga.sh` at 755 and `upload_bit` also sends `fpga.bit.bin`. Never run by the build |
 
-`lock_in+pid_harmonic/fpga/Makefile`: see [FPGA](#fpga-vivado-20201).
+`lock_in+pid_square/fpga/Makefile`: see [FPGA](#fpga-vivado-20201).
 
 Settings file `_settings.env` (root, not versioned), read by both Makefiles:
 
@@ -169,22 +178,22 @@ RPSCP=-P 22
 
 ## C controller (`controllerhf.so`)
 
-- Sources in `lock_in+pid_harmonic/src/`, `src/Makefile`: `$(CROSS_COMPILE)gcc`, `-Wall -Werror -g -fPIC`,
+- Sources in `lock_in+pid_square/src/`, `src/Makefile`: `$(CROSS_COMPILE)gcc`, `-Wall -Werror -g -fPIC`,
   linked with `-shared -lm -lpthread`; `VERSION` and `REVISION` come from `info/info.json` and the build
   number through `CFLAGS`.
-- Build: `make -C lock_in+pid_harmonic controllerhf.so` (with `settings.sh` loaded). The files
+- Build: `make -C lock_in+pid_square controllerhf.so` (with `settings.sh` loaded). The files
   `src/main_controllerhf.so_.c` and `src/main_controllerhf_rld.so_.c` are copies left by the Makefile.
 - To install a new `.so` on a running board: copy it and **stop + start the App**
-  (`/bazaar?stop=` then `/bazaar?start=lock_in+pid_harmonic`), so that nginx loads the new library.
+  (`/bazaar?stop=` then `/bazaar?start=lock_in+pid_square`), so that nginx loads the new library.
 - Debug output (`TRACE`) goes to the nginx log when built with `DEBUG` (`controllerhf_dbg.so`).
 
 ## Tools of `c/` (`lock`, `osc`, streaming)
 
 | Tool | Source | Purpose |
 |---|---|---|
-| `lock` | `c/lock.c` | read/write the lock registers by name (`/lock_in+pid_harmonic/lock`) |
-| `osc` | `c/osc.c` | read/write the scope registers by name, `dump` of both buffers (`/lock_in+pid_harmonic/osc`) |
-| `streaming` | `c/streaming.c` | waits for `stream_cmd`, launches `stream_tcp_osc_cmd` (`/lock_in+pid_harmonic/streaming`, through `stream_start.sh`) |
+| `lock` | `c/lock.c` | read/write the lock registers by name (`/lock_in+pid_square/lock`) |
+| `osc` | `c/osc.c` | read/write the scope registers by name, `dump` of both buffers (`/lock_in+pid_square/osc`) |
+| `streaming` | `c/streaming.c` | waits for `stream_cmd`, launches `stream_tcp_osc_cmd` (`/lock_in+pid_square/streaming`, through `stream_start.sh`) |
 | `stream_tcp_osc_cmd` | `c/stream_tcp_osc_cmd.c` | reads the scope buffers continuously and sends them over TCP: `stream_tcp_osc_cmd <host> <port> <send_min_len>` |
 
 **From the development PC (cross compilation, since v2.3.10).** `c/Makefile` uses `$(CROSS_COMPILE)gcc`
@@ -192,21 +201,21 @@ with its own flags (`-g -std=gnu11 -fstack-protector-strong`, plus `-Wno-overflo
 same as the original binaries built on the board, independent of the `CFLAGS` of the App Makefile:
 
 ```bash
-cd rp_lock-in_pid_h
+cd rp_lock-in_pid_sq
 source settings.sh                       # CROSS_COMPILE=arm-linux-gnueabihf-
-make -C lock_in+pid_harmonic c_tools     # or: make -C lock_in+pid_harmonic/c all
-make -C lock_in+pid_harmonic/c clean
+make -C lock_in+pid_square c_tools     # or: make -C lock_in+pid_square/c all
+make -C lock_in+pid_square/c clean
 ```
 
 `make all`, `make app` and the packages include `c_tools`, so the binaries in `target/` always match their
-sources. Extra flags: `make -C lock_in+pid_harmonic/c EXTRA_CFLAGS=-Wall`.
+sources. Extra flags: `make -C lock_in+pid_square/c EXTRA_CFLAGS=-Wall`.
 
 **On the board (as before v2.3.10).** With `CROSS_COMPILE` empty the same Makefile uses the native `gcc`:
 
 ```bash
 ssh root@rp-XXXXXX.local
 export PATH_REDPITAYA=/opt/redpitaya; /opt/redpitaya/sbin/rw     # read-write file system (Ecosystem 2.0)
-cd /opt/redpitaya/www/apps/lock_in+pid_harmonic/c
+cd /opt/redpitaya/www/apps/lock_in+pid_square/c
 make clean && make all
 ```
 
@@ -215,12 +224,12 @@ The original binaries were built with gcc 5.4 on a 0.9x board. Whether RedPitaya
 
 ## FPGA (Vivado 2020.1)
 
-`lock_in+pid_harmonic/fpga/` follows the structure of
+`lock_in+pid_square/fpga/` follows the structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA) (project `v0.94`, model `Z10`), with the
 `lock` module of the App. Details: `fpga/README.md`.
 
 ```bash
-cd rp_lock-in_pid_h/lock_in+pid_harmonic/fpga
+cd rp_lock-in_pid_sq/lock_in+pid_square/fpga
 make            # prj/v0.94/out/red_pitaya.bit + prj/v0.94/out/fpga.bit.bin (bootgen)
 make bit        # only the bitstream
 make bin        # only fpga.bit.bin from an existing red_pitaya.bit
@@ -262,7 +271,7 @@ the bus reads: see [test/](#simulations-and-tests-test).
 - The version shown in the title is set when packaging (`var app_version = 'VERSION'` is replaced in
   `target/`): test with the file from `target/`, not from the source folder.
 - To try a change on the board without rebuilding the rest, copy `index.html` (and `js/`, `css/`) to
-  `/opt/redpitaya/www/apps/lock_in+pid_harmonic/` (`upload_app.sh -w <host>` does it) and reload the page;
+  `/opt/redpitaya/www/apps/lock_in+pid_square/` (`upload_app.sh -w <host>` does it) and reload the page;
   `nginx.conf` serves `index.html` with `Cache-Control: no-cache`.
 - Syntax check: extract the scripts and run `node --check` (as devAgent does), and run the node
   simulations of `test/`, which load the functions of `index.html`.
@@ -282,7 +291,7 @@ description, UI widget) and of the scope registers, and regenerates the code bet
 | `c/lock.c`, `c/osc.c`, `c/lock.txt`, `c/osc.txt` | `[LOCKREGS DOCK]`, `[OSCREGS DOCK]`, CSV files |
 | `py/hugo.py` | register tables |
 
-Usage (from inside `rp_lock-in_pid_h/`): `python3 resources/config_tool.py` (verilog, main, html, py), or
+Usage (from inside `rp_lock-in_pid_sq/`): `python3 resources/config_tool.py` (verilog, main, html, py), or
 with arguments `verilog|fpga`, `main`, `html`, `py`, `rp_c`, `all`, `clean`. Each run moves the modified
 files to `name_YYYYMMDD_HHmmss.ext` backups. Hand-written blocks inside a dock (e.g. the `c_block` of
 `lock_control` in `[FPGAUPDATE DOCK]`) are kept in the table of the tool; review the diff after running it.
@@ -304,10 +313,12 @@ After adding or changing a register: run the tool, rebuild FPGA + controller + t
 | `trig_from_graph_sim.js` | `node test/trig_from_graph_sim.js` | click → time conversion of *Choose from graph* (v2.3.12) |
 | `trig_input_units_sim.js` | `node test/trig_input_units_sim.js [--old]` | Time / Level trigger fields with units, empty fields not sent as 0 (v2.3.16) |
 | `lock_bus_read_tb.sv` | `test/lock_bus_read_sim.sh [work_dir [lock.v]]` (Vivado 2020.1 xsim) | bus reads of `lock.v` through `sys_bus_cdc` with asynchronous clocks: `sys_rdata` stable when the PS takes it (v2.3.17); prints `TB RESULT: PASS` |
+| `sq_lockin_tb.v` | `test/sq_lockin_sim.sh [work_dir]` (Vivado 2020.1 xsim) | v2.0.0: square generator (period, duty, quadrature, phase, trigger) and square lock-in of `lock.v` with OUT1 looped back to IN1 (sqX/sqY/sqF vs. the expected correlation at 31.25 MHz, 20.8 MHz, 625 kHz; gains, modulation, filters); prints `TB RESULT: PASS` |
+| `sq_modulation_ui_sim.js` | `node test/sq_modulation_ui_sim.js [index.html]` | v2.0.0: square generator fields with units, texts, `lpf_update()`, Square Lock-in display, HTML of the square panel |
 | `config_load_window_sim.js` | `node test/config_load_window_sim.js [--old]` | Config → load of the time window: conversion, and the real chunked send of `index.html` against a model of `rp_set_params()` (forceX handshake) plus a GET poll (v2.3.17) |
 | `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX |
 
-Run them from `lock_in+pid_harmonic/`. All exit with code 1 on failure. `--old` runs a check against the code of
+Run them from `lock_in+pid_square/`. All exit with code 1 on failure. `--old` runs a check against the code of
 the previous version (it must fail). `lock_ctrl_tb.v` covers 32-bit time triggers ≥ 2³¹ since v2.3.15 (cases
 14-15). Results of v2.3.17 (`devAgent.md`, `build_logs/rp_lock-in_pid_h_20261009_2124_v2317c_sim.txt`):
 `lock_ctrl_sim` 35/35, `lock_bus_read_sim` PASS (0 unstable reads of 4000), `lock_ctrl_ui_sim` 28/28,
@@ -327,16 +338,16 @@ with `dummy_simulator` on a second board; reports in `reportes/lock-in_pid_h_loc
 From a package (`archive/*.tar.gz` or `.zip`, or a GitHub release):
 
 ```bash
-tar -xzf lock_in+pid_harmonic-2.3.17-<build>-devbuild.tar.gz
+tar -xzf lock_in+pid_square-2.3.17-<build>-devbuild.tar.gz
 ./upload_app.sh rp-XXXXXX.local          # -p <ssh port>; -w uploads only index.html, js, css
 ```
 
 `upload_app.sh` installs an SSH key if needed, makes the file system writable (`/boot/sbin/rw`), replaces
-`/opt/redpitaya/www/apps/lock_in+pid_harmonic/` and copies the App. By hand: copy the folder
-`lock_in+pid_harmonic/` of the package (not the source folder) to `/opt/redpitaya/www/apps/` with the
+`/opt/redpitaya/www/apps/lock_in+pid_square/` and copies the App. By hand: copy the folder
+`lock_in+pid_square/` of the package (not the source folder) to `/opt/redpitaya/www/apps/` with the
 file system in read-write mode, keeping `fpga.sh` executable (755).
 
-After installing: open the App page, or stop + start it (`/bazaar?stop=`, `/bazaar?start=lock_in+pid_harmonic`)
+After installing: open the App page, or stop + start it (`/bazaar?stop=`, `/bazaar?start=lock_in+pid_square`)
 if an older version was running. If `nginx.conf` changed, restart nginx
 (`systemctl restart redpitaya_nginx`). On Ecosystem 2.0 `reload_fpga` is not supported: restarting the App
 reloads the FPGA.
@@ -354,9 +365,9 @@ Notes for Ecosystem 2.0 (`testAgent.md`):
 
 ## Versioning and packages
 
-- Version: `lock_in+pid_harmonic/info/info.json` (`"version": "2.3.17-BUILD_NUMBER"`), the title of
+- Version: `lock_in+pid_square/info/info.json` (`"version": "2.3.17-BUILD_NUMBER"`), the title of
   `index.html` (`Harmonic lock-in+PID (v2.3.17)`), `CHANGELOG.md`, `README.md` ("Current version"). Build number: `_build_number`.
   Revision: `REVISION` (default `devbuild`).
-- Package name: `lock_in+pid_harmonic-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`.
+- Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`.
 - Branches: `master` = 0.3.x (FPGA Vivado 2015.2), `devel2.0` = 2.3.x (FPGA Vivado 2020.1, Ecosystem 2.0).
   Tags `v2.3.11` .. `v2.3.17` on `devel2.0`.

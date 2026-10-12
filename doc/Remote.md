@@ -1,7 +1,16 @@
 # Remote control
 
-How to control `lock_in+pid_harmonic` **v2.3.17** from a program, without the web page. The registers are
+How to control `lock_in+pid_square` **v2.0.0** from a program, without the web page. The registers are
 described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.md).
+
+> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
+> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
+> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
+> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
+> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
+> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
+> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
+> of the harmonic App.
 
 - [Options](#options)
 - [HTTP API](#http-api)
@@ -35,7 +44,7 @@ described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.
 | SSH version (`resources/remote_control/shh_version`, `control_hugo.py`) | computer, through SSH | deprecated, kept for specific cases |
 
 The web page does not need to be open: the App only has to be **loaded** (FPGA image of this App in the
-PL). The App is loaded by opening its page once (or by `http://rp-XXXXXX.local/bazaar?start=lock_in+pid_harmonic`).
+PL). The App is loaded by opening its page once (or by `http://rp-XXXXXX.local/bazaar?start=lock_in+pid_square`).
 Do not use the endpoints while another App is loaded: `c/lock` and `c/osc` access the FPGA addresses
 directly.
 
@@ -45,15 +54,15 @@ Ecosystem 2.0; it was tested on the board with `control_finn.py` and `example_us
 
 ## HTTP API
 
-The endpoints are defined in `lock_in+pid_harmonic/nginx.conf` (Lua blocks). Base URL:
+The endpoints are defined in `lock_in+pid_square/nginx.conf` (Lua blocks). Base URL:
 
 ```
-http://rp-XXXXXX.local/lock_in+pid_harmonic/
+http://rp-XXXXXX.local/lock_in+pid_square/
 ```
 
 ### `/lock`: lock module registers
 
-`GET /lock_in+pid_harmonic/lock?<query>` runs `/opt/redpitaya/www/apps/lock_in+pid_harmonic/c/lock` with the
+`GET /lock_in+pid_square/lock?<query>` runs `/opt/redpitaya/www/apps/lock_in+pid_square/c/lock` with the
 query as arguments and returns its output as plain text, one line `name:value` per register:
 
 | Query | Command run | Effect |
@@ -82,13 +91,13 @@ Rules (from `nginx.conf` and `c/lock.c`):
 Example:
 
 ```bash
-curl "http://rp-XXXXXX.local/lock_in+pid_harmonic/lock?lock_status&lock_control"
+curl "http://rp-XXXXXX.local/lock_in+pid_square/lock?lock_status&lock_control"
 # lock_status:4362
 # lock_control:1362
 ```
 
 The register list (name, index, signed, read-only, min, max) is served at
-`/lock_in+pid_harmonic/c/lock.txt` (ranges of v2.3.15, see [FPGA.md](FPGA.md#register-description-files-locktxt-osctxt)).
+`/lock_in+pid_square/c/lock.txt` (ranges of v2.3.15, see [FPGA.md](FPGA.md#register-description-files-locktxt-osctxt)).
 
 **Reading live signals.** Up to v2.3.16, about 2-3 % of the bus reads of a signal that changes on every clock
 (`in1` while it crosses zero, `oscA` showing `in1`) returned 32 bits of garbage (e.g. `0x0118c9c1`), out of the
@@ -99,8 +108,8 @@ read is the one of the clock before the read (one more clock of latency, bus rea
 
 ### `/osc`: oscilloscope registers and memory
 
-`GET /lock_in+pid_harmonic/osc?<query>` runs `c/osc` the same way, on the 21 registers of the scope listed
-in `/lock_in+pid_harmonic/c/osc.txt`: `conf`, `TrgSrc`, `ChAth`, `ChBth`, `TrgDelay`, `Dec`, `CurWpt`,
+`GET /lock_in+pid_square/osc?<query>` runs `c/osc` the same way, on the 21 registers of the scope listed
+in `/lock_in+pid_square/c/osc.txt`: `conf`, `TrgSrc`, `ChAth`, `ChBth`, `TrgDelay`, `Dec`, `CurWpt`,
 `TrgWpt`, `ChAHys`, `ChBHys`, `AvgEn`, `PreTrgCnt`, `ChAEqFil1..4`, `ChBEqFil1..4` and, since v2.3.15,
 **`TrgUnlock`** (index 37, offset `0x94`, write 1; reads 0).
 
@@ -137,7 +146,7 @@ worker resets and configures the scope once and then does not arm it; `src/main.
 ```bash
 curl -s -X POST -H 'Content-Type: application/json' \
      -d '{"datasets":{"params":{"trig_mode":2}}}' http://rp-XXXXXX.local/data
-# {"app":{"id":"lock_in+pid_harmonic"},"datasets":{"params":{..., "trig_mode":2, ...}}}
+# {"app":{"id":"lock_in+pid_square"},"datasets":{"params":{..., "trig_mode":2, ...}}}
 ```
 
 `trig_mode` 0 gives the scope back in Auto, 1 in Normal; `{}` (empty params) only reads. Rules found on the
@@ -156,11 +165,11 @@ board (v2.3.16):
 
 | Endpoint | Answer |
 |---|---|
-| `/lock_in+pid_harmonic/calib` | output of `/opt/redpitaya/bin/calib -rv` (calibration constants, `NAME = value` lines; on OS 2.04 it prints the v1 names, e.g. `FE_CH1_FS_G_HI = 42949672`, `FE_CH1_DC_offs = 0`, v2.3.15 test) |
-| `/lock_in+pid_harmonic/get_ip` | IP of the client |
-| `/lock_in+pid_harmonic/streaming` | starts `c/streaming` (see [Streaming](#streaming)); answers `OK` |
-| `/lock_in+pid_harmonic/check_streaming` | `0` if `c/streaming` is running, `1` if not |
-| `/lock_in+pid_harmonic/restart_server` | restarts the nginx of the board (`systemctl restart redpitaya_nginx`) |
+| `/lock_in+pid_square/calib` | output of `/opt/redpitaya/bin/calib -rv` (calibration constants, `NAME = value` lines; on OS 2.04 it prints the v1 names, e.g. `FE_CH1_FS_G_HI = 42949672`, `FE_CH1_DC_offs = 0`, v2.3.15 test) |
+| `/lock_in+pid_square/get_ip` | IP of the client |
+| `/lock_in+pid_square/streaming` | starts `c/streaming` (see [Streaming](#streaming)); answers `OK` |
+| `/lock_in+pid_square/check_streaming` | `0` if `c/streaming` is running, `1` if not |
+| `/lock_in+pid_square/restart_server` | restarts the nginx of the board (`systemctl restart redpitaya_nginx`) |
 
 ### Known issue of the Ecosystem: `POST /data` leaves connections open
 
@@ -175,8 +184,8 @@ This is not a bug of the App and is not fixed (it should be reported to Red Pita
   The web page makes one POST per change and 5-9 per Config → load; in the tests 15 config loads raised the
   count by ~100.
 - Release them by restarting nginx: `ssh root@rp-XXXXXX.local systemctl restart redpitaya_nginx` (or
-  `GET /lock_in+pid_harmonic/restart_server`, which is a GET and does not leak). This unloads the C controller:
-  open the page again or call `bazaar?start=lock_in+pid_harmonic`, which **reloads the FPGA image** (registers
+  `GET /lock_in+pid_square/restart_server`, which is a GET and does not leak). This unloads the C controller:
+  open the page again or call `bazaar?start=lock_in+pid_square`, which **reloads the FPGA image** (registers
   back to their reset values, an active lock is lost). Whether the FPGA (and a running lock) is affected by the
   nginx restart alone, before the `start`, has not been checked: **a confirmar**.
 - `control_finn.py` keeps `POST /data` to the minimum ([table](#post-data-made-by-each-function)); `rp.osc.post_count`
@@ -190,7 +199,7 @@ A minimal client for the registers, enough for most scripts (for `POST /data` us
 ```python
 import requests
 
-URL = 'http://rp-XXXXXX.local/lock_in+pid_harmonic'
+URL = 'http://rp-XXXXXX.local/lock_in+pid_square'
 
 def lock_get(*names):
     """Read lock registers; returns a dict name -> int."""
@@ -228,7 +237,7 @@ given in the environment variable `RP_URL`). Every function has a docstring (`he
 ```python
 from control_finn import RedPitayaApp, reg_labels, WebScopeNotStopped, AcquisitionTimeout
 
-rp = RedPitayaApp('http://rp-XXXXXX.local/lock_in+pid_harmonic/?type=run')   # URL copied from the browser
+rp = RedPitayaApp('http://rp-XXXXXX.local/lock_in+pid_square/?type=run')   # URL copied from the browser
 rp.ip                             # IP used for all the requests (host name resolved once)
 
 rp.lock.aux_A                     # read one register
@@ -408,7 +417,7 @@ Ramp period: `T = (high − low) · (step + 1) · 8 ns · (2 − sawtooth)` ([FP
 ### Close and check a lock
 
 The lock control is commanded only with `lock_control` and observed in `lock_status`
-([`lock_control.md`](../lock_in+pid_harmonic/doc/lock_control.md) §5). With `control_finn.py`
+([`lock_control.md`](../lock_in+pid_square/doc/lock_control.md) §5). With `control_finn.py`
 (the Lock cell of `example_usage.py`, LOCKED in 0.08-0.10 s on the board, v2.3.17):
 
 ```python
@@ -505,7 +514,7 @@ described in `resources/README.md` (`resources/streaming/read_bin.py` reads the 
 
 ## Running on the board: `c/` and `py/`
 
-On the board (`ssh root@rp-XXXXXX.local`), in `/opt/redpitaya/www/apps/lock_in+pid_harmonic/`:
+On the board (`ssh root@rp-XXXXXX.local`), in `/opt/redpitaya/www/apps/lock_in+pid_square/`:
 
 ```bash
 c/lock                      # all lock registers

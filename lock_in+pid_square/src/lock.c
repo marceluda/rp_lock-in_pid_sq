@@ -1,0 +1,531 @@
+/**
+ * @brief Red Pitaya LOCK Controller
+ *
+ * @Author Marcelo Luda <marceluda@gmail.com>
+ *
+ *
+ *
+ * This part of code is written in C programming language.
+ * Please visit http://en.wikipedia.org/wiki/C_(programming_language)
+ * for more details on the language used herein.
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#include "lock.h"
+#include "fpga_lock.h"
+
+
+#ifndef min
+    #define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+
+#ifndef max
+    #define max(a,b) ((a) > (b) ? (a) : (b))
+#endif
+
+/* v2.3.15: float parameter -> unsigned 32-bit register (lock_trig_time). The parameters are float:
+ * (int) of a value >= 2**31 is undefined (on the ARM it saturated to 2**31 - 1), and 4294967295
+ * is 4294967296.0f as float. The conversion goes through int64_t (defined for the whole range)
+ * and saturates to 0 .. 0xffffffff. Values above 2**24 keep the float resolution. */
+static inline uint32_t lock_float_to_u32(float v)
+{
+    if (!(v > 0.0f))          return 0u ;            /* also NaN */
+    if (v >= 4294967295.0f)   return 0xffffffffu ;
+    return (uint32_t)(int64_t)v ;
+}
+
+
+int   save_read_ctrl = -1 ;
+float lock_error_var = 0 ;
+
+/* v2.3.13: last value of lock_control written by lock_update() (0xffffffff: none yet).
+ * lock_control is command + configuration and the FPGA never modifies it (doc/lock_control.md):
+ *  - lock_update() writes it only when the value composed from LOCK_CTRL_AUX_* changes, so an
+ *    unrelated parameter change does not rewrite a value written from outside the controller;
+ *  - lock_update_status() copies it to LOCK_CTRL_AUX_* only when it differs from this value,
+ *    i.e. when it was written from outside (Python, c/lock, monitor). */
+static uint32_t lock_control_written = 0xffffffff ;
+
+/* v2.3.18: the lock trigger registers (lock_trig_val 0x20, lock_trig_time 0x24, lock_trig_sw 0x28) follow the
+ * same rule as lock_control. Python (py/lock_from_registers.py --time/--level/--sw, control_finn.py) may write
+ * them: before, the web page never showed those values and lock_update() wrote its own copy back at the next
+ * change of any lock parameter (a lock armed from Python then fired at the time of the page).
+ *  - lock_update() writes each one only when the value derived from its parameter changes
+ *    (lock_trig_*_par: the derived value last seen);
+ *  - lock_update_status() reads them, and when a register differs from lock_trig_*_reg (the value written by
+ *    lock_update() or already taken from outside) copies it to its parameter.
+ * lock_trig_known = 0: nothing written yet (lock_init(), the first lock_update() writes all three). */
+static int      lock_trig_known    = 0 ;
+static int32_t  lock_trig_val_reg  = 0 , lock_trig_val_par  = 0 ;
+static uint32_t lock_trig_time_reg = 0 , lock_trig_time_par = 0 ;
+static uint32_t lock_trig_sw_reg   = 0 , lock_trig_sw_par   = 0 ;
+
+/* lock_in+pid_square v2.0.0: the square generator registers gen_mod_sqp and gen_mod_phase_sq (full uint32,
+ * c/lock, Python or control_finn.py may write them exactly) follow the same rule as the lock trigger
+ * registers: written by lock_update() only when the value derived from the parameter changes, and copied
+ * to the parameter by lock_update_status() when they were written from outside.
+ * lock_sq_known = 0: nothing written yet (lock_init()). */
+static int      lock_sq_known      = 0 ;
+static uint32_t lock_sq_sqp_reg    = 0 , lock_sq_sqp_par    = 0 ;
+static uint32_t lock_sq_phase_reg  = 0 , lock_sq_phase_par  = 0 ;
+
+/**
+ * GENERAL DESCRIPTION:
+ *
+ *
+ * PENDIENTE  PENDIENTE  PENDIENTE  PENDIENTE  PENDIENTE  PENDIENTE
+ *
+ *
+ */
+
+
+/*----------------------------------------------------------------------------------*/
+/** @brief Initialize LOCK Controller module
+ *
+ * A function is intended to be called within application initialization. It's purpose
+ * is to initialize LOCK Controller module.
+ *
+ * @retval     -1 failure, error message is reported on standard error
+ * @retval      0 successful initialization
+ */
+
+int lock_init(void)
+{
+    /* v2.3.18: the registers are reset by fpga_lock_init(): nothing written by this controller yet
+     * (also if the library stays loaded between a stop and a start of the App) */
+    lock_control_written = 0xffffffff ;
+    lock_trig_known      = 0 ;
+    lock_sq_known        = 0 ;
+
+    if(fpga_lock_init() < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/*----------------------------------------------------------------------------------*/
+/** @brief Cleanup LOCK Controller module
+ *
+ * A function is intended to be called on application's termination. The main purpose
+ * of this function is to release allocated resources...
+ *
+ * @retval      0 success, never fails.
+ */
+int lock_exit(void)
+{
+    fpga_lock_exit();
+
+    return 0;
+}
+
+
+/*----------------------------------------------------------------------------------*/
+/**
+ * @brief Update LOCK Controller module towards actual settings.
+ *
+ * A function is intended to be called whenever one of the settings is modified
+ *
+ * @param[in] params  Pointer to overall configuration parameters
+ * @retval -1 failure, error message is repoted on standard error device
+ * @retval  0 succesful update
+ */
+int lock_update(rp_app_params_t *params)
+{
+
+  // [FPGAUPDATE DOCK]
+    g_lock_reg->oscA_sw                   = (int)params[LOCK_OSCA_SW                  ].value;
+    g_lock_reg->oscB_sw                   = (int)params[LOCK_OSCB_SW                  ].value;
+    g_lock_reg->osc_ctrl                  = (((int)params[LOCK_OSC2_FILT_OFF].value)<<1) + ((int)params[LOCK_OSC1_FILT_OFF].value);
+    g_lock_reg->trig_sw                   = (int)params[LOCK_TRIG_SW                  ].value;
+    g_lock_reg->out1_sw                   = (int)params[LOCK_OUT1_SW                  ].value;
+    g_lock_reg->out2_sw                   = (int)params[LOCK_OUT2_SW                  ].value;
+    { /* v2.3.13: lock_control is command + configuration (doc/lock_control.md). Written only when
+       * the value composed from lock_ctrl_aux_* changes (keep this block if the dock is regenerated) */
+        uint32_t lc = (uint32_t) (
+            ((int)params[LOCK_CTRL_AUX_LOCK_NOW        ].value) *    1 +
+            ((int)params[LOCK_CTRL_AUX_LAUNCH_LOCK_TRIG].value) *    2 +
+            ((int)params[LOCK_CTRL_AUX_PIDB_ENABLE_CTRL].value) *    4 +
+            ((int)params[LOCK_CTRL_AUX_PIDA_ENABLE_CTRL].value) *    8 +
+            ((int)params[LOCK_CTRL_AUX_RAMP_ENABLE_CTRL].value) *   16 +
+            ((int)params[LOCK_CTRL_AUX_SET_PIDB_ENABLE ].value) *   32 +
+            ((int)params[LOCK_CTRL_AUX_SET_PIDA_ENABLE ].value) *   64 +
+            ((int)params[LOCK_CTRL_AUX_SET_RAMP_ENABLE ].value) *  128 +
+            ((int)params[LOCK_CTRL_AUX_TRIG_TYPE       ].value) *  256 +
+            ((int)params[LOCK_CTRL_AUX_LOCK_TRIG_RISE  ].value) * 1024 );
+        if (lc != lock_control_written) {
+            g_lock_reg->lock_control = lc;
+            lock_control_written     = lc;
+        }
+    }
+  //g_lock_reg->lock_status               = (int)params[LOCK_LOCK_STATUS              ].value;
+    { /* v2.3.18: lock trigger registers, written only when their parameter changes (see lock_trig_known;
+       * keep this block if the dock is regenerated) */
+        int32_t  tv = (int32_t)  params[LOCK_LOCK_TRIG_VAL ].value;
+        uint32_t tt = lock_float_to_u32(params[LOCK_LOCK_TRIG_TIME_VAL].value);
+        uint32_t ts = (uint32_t)(int)params[LOCK_LOCK_TRIG_SW  ].value;
+        if (!lock_trig_known || tv != lock_trig_val_par) {
+            g_lock_reg->lock_trig_val  = tv;
+            lock_trig_val_par  = tv;
+            lock_trig_val_reg  = (int32_t) g_lock_reg->lock_trig_val;    /* as the FPGA keeps it */
+        }
+        if (!lock_trig_known || tt != lock_trig_time_par) {
+            g_lock_reg->lock_trig_time = tt;
+            lock_trig_time_par = tt;
+            lock_trig_time_reg = g_lock_reg->lock_trig_time;
+        }
+        if (!lock_trig_known || ts != lock_trig_sw_par) {
+            g_lock_reg->lock_trig_sw   = ts;
+            lock_trig_sw_par   = ts;
+            lock_trig_sw_reg   = g_lock_reg->lock_trig_sw;
+        }
+        lock_trig_known = 1;
+    }
+    /* lock_trig_time: written in the lock_trig_val block above (v2.3.18) */
+    /* lock_trig_sw: written in the lock_trig_val block above (v2.3.18) */
+    g_lock_reg->rl_error_threshold        = (int)params[LOCK_RL_ERROR_THRESHOLD       ].value;
+    g_lock_reg->rl_signal_sw              = (int)params[LOCK_RL_SIGNAL_SW             ].value;
+    g_lock_reg->rl_signal_threshold       = (int)params[LOCK_RL_SIGNAL_THRESHOLD      ].value;
+    g_lock_reg->rl_config                 = (((int)params[LOCK_RL_RESET].value) << 2 ) + (((int)params[LOCK_RL_SIGNAL_ENABLE].value) << 1 ) + ((int)params[LOCK_RL_ERROR_ENABLE].value);
+  //g_lock_reg->rl_state                  = (int)params[LOCK_RL_STATE                 ].value;
+    g_lock_reg->sf_jumpA                  = (int)params[LOCK_SF_JUMPA                 ].value;
+    g_lock_reg->sf_jumpB                  = (int)params[LOCK_SF_JUMPB                 ].value;
+    g_lock_reg->sf_config                 = (((int)params[LOCK_SF_BFRZI].value) << 4 ) +(((int)params[LOCK_SF_BFRZO].value) << 3 ) +(((int)params[LOCK_SF_AFRZI].value) << 2 ) + (((int)params[LOCK_SF_AFRZO].value) << 1 ) + ((int)params[LOCK_SF_START].value);
+    g_lock_reg->signal_sw                 = (int)params[LOCK_SIGNAL_SW                ].value;
+  //g_lock_reg->signal_i                  = (int)params[LOCK_SIGNAL_I                 ].value;
+    g_lock_reg->sg_amp_sq                 = (int)params[LOCK_SG_AMP_SQ                ].value;
+    g_lock_reg->sg_amp_sqF                = (int)params[LOCK_SG_AMP_SQF               ].value;
+    g_lock_reg->lpf_sq                    = (((int)params[LOCK_LPF_SQ_ORDER].value)<<5) + ((int)params[LOCK_LPF_SQ_TAU].value);
+    g_lock_reg->lpf_sqF                   = (((int)params[LOCK_LPF_SQF_ORDER].value)<<5) + ((int)params[LOCK_LPF_SQF_TAU].value);
+    g_lock_reg->error_sw                  = (int)params[LOCK_ERROR_SW                 ].value;
+    g_lock_reg->error_offset              = (int)params[LOCK_ERROR_OFFSET             ].value;
+  //g_lock_reg->error                     = (int)params[LOCK_ERROR                    ].value;
+  //g_lock_reg->error_mean                = (int)params[LOCK_ERROR_MEAN               ].value;
+  //g_lock_reg->error_std                 = (int)params[LOCK_ERROR_STD                ].value;
+    g_lock_reg->mod_out1                  = (int)params[LOCK_MOD_OUT1                 ].value;
+    g_lock_reg->mod_out2                  = (int)params[LOCK_MOD_OUT2                 ].value;
+    { /* v2.0.0: square generator registers (full uint32), written only when their parameter changes
+       * (see lock_sq_known in src/lock.c; keep this block if the dock is regenerated) */
+        uint32_t sp = lock_float_to_u32(params[LOCK_GEN_MOD_SQP     ].value);
+        uint32_t sf = lock_float_to_u32(params[LOCK_GEN_MOD_PHASE_SQ].value);
+        if (!lock_sq_known || sp != lock_sq_sqp_par) {
+            g_lock_reg->gen_mod_sqp      = sp;
+            lock_sq_sqp_par   = sp;
+            lock_sq_sqp_reg   = g_lock_reg->gen_mod_sqp;
+        }
+        if (!lock_sq_known || sf != lock_sq_phase_par) {
+            g_lock_reg->gen_mod_phase_sq = sf;
+            lock_sq_phase_par = sf;
+            lock_sq_phase_reg = g_lock_reg->gen_mod_phase_sq;
+        }
+        lock_sq_known = 1;
+    }
+    /* gen_mod_phase_sq: written in the gen_mod_sqp block above (v2.0.0) */
+  //g_lock_reg->ramp_A                    = (int)params[LOCK_RAMP_A                   ].value;
+  //g_lock_reg->ramp_B                    = (int)params[LOCK_RAMP_B                   ].value;
+    g_lock_reg->ramp_step                 = (int)params[LOCK_RAMP_STEP                ].value;
+    g_lock_reg->ramp_low_lim              = (int)params[LOCK_RAMP_LOW_LIM             ].value;
+    g_lock_reg->ramp_hig_lim              = (int)params[LOCK_RAMP_HIG_LIM             ].value;
+    g_lock_reg->ramp_reset                = (int)params[LOCK_RAMP_RESET               ].value;
+    g_lock_reg->ramp_enable               = (int)params[LOCK_RAMP_ENABLE              ].value;
+    g_lock_reg->ramp_direction            = (int)params[LOCK_RAMP_DIRECTION           ].value;
+    g_lock_reg->ramp_sawtooth             = (int)params[LOCK_RAMP_SAWTOOTH            ].value;
+    g_lock_reg->ramp_B_factor             = (int)params[LOCK_RAMP_B_FACTOR            ].value;
+  //g_lock_reg->sq_ref                    = (int)params[LOCK_SQ_REF                   ].value;
+  //g_lock_reg->sq_quad                   = (int)params[LOCK_SQ_QUAD                  ].value;
+  //g_lock_reg->sq_phas                   = (int)params[LOCK_SQ_PHAS                  ].value;
+  //g_lock_reg->in1                       = (int)params[LOCK_IN1                      ].value;
+  //g_lock_reg->in2                       = (int)params[LOCK_IN2                      ].value;
+  //g_lock_reg->out1                      = (int)params[LOCK_OUT1                     ].value;
+  //g_lock_reg->out2                      = (int)params[LOCK_OUT2                     ].value;
+  //g_lock_reg->oscA                      = (int)params[LOCK_OSCA                     ].value;
+  //g_lock_reg->oscB                      = (int)params[LOCK_OSCB                     ].value;
+  //g_lock_reg->sqX_28                    = (int)params[LOCK_SQX_28                   ].value;
+  //g_lock_reg->sqY_28                    = (int)params[LOCK_SQY_28                   ].value;
+  //g_lock_reg->sqF_28                    = (int)params[LOCK_SQF_28                   ].value;
+  //g_lock_reg->cnt_clk                   = (int)params[LOCK_CNT_CLK                  ].value;
+  //g_lock_reg->cnt_clk2                  = (int)params[LOCK_CNT_CLK2                 ].value;
+    g_lock_reg->read_ctrl                 = (int)params[LOCK_READ_CTRL                ].value;
+    g_lock_reg->pidA_sw                   = (int)params[LOCK_PIDA_SW                  ].value;
+    g_lock_reg->pidA_PSR                  = (int)params[LOCK_PIDA_PSR                 ].value;
+    g_lock_reg->pidA_ISR                  = (int)params[LOCK_PIDA_ISR                 ].value;
+    g_lock_reg->pidA_DSR                  = (int)params[LOCK_PIDA_DSR                 ].value;
+    g_lock_reg->pidA_SAT                  = (int)params[LOCK_PIDA_SAT                 ].value;
+    g_lock_reg->pidA_sp                   = (int)params[LOCK_PIDA_SP                  ].value;
+    g_lock_reg->pidA_kp                   = (int)params[LOCK_PIDA_KP                  ].value;
+    g_lock_reg->pidA_ki                   = (int)params[LOCK_PIDA_KI                  ].value;
+    g_lock_reg->pidA_kd                   = (int)params[LOCK_PIDA_KD                  ].value;
+  //g_lock_reg->pidA_in                   = (int)params[LOCK_PIDA_IN                  ].value;
+  //g_lock_reg->pidA_out                  = (int)params[LOCK_PIDA_OUT                 ].value;
+    g_lock_reg->pidA_ctrl                 = (((int)params[LOCK_PIDA_IFREEZE].value)<<2) + (((int)params[LOCK_PIDA_FREEZE].value)<<1) + ((int)params[LOCK_PIDA_IRST].value);
+  //g_lock_reg->ctrl_A                    = (int)params[LOCK_CTRL_A                   ].value;
+    g_lock_reg->pidB_sw                   = (int)params[LOCK_PIDB_SW                  ].value;
+    g_lock_reg->pidB_PSR                  = (int)params[LOCK_PIDB_PSR                 ].value;
+    g_lock_reg->pidB_ISR                  = (int)params[LOCK_PIDB_ISR                 ].value;
+    g_lock_reg->pidB_DSR                  = (int)params[LOCK_PIDB_DSR                 ].value;
+    g_lock_reg->pidB_SAT                  = (int)params[LOCK_PIDB_SAT                 ].value;
+    g_lock_reg->pidB_sp                   = (int)params[LOCK_PIDB_SP                  ].value;
+    g_lock_reg->pidB_kp                   = (int)params[LOCK_PIDB_KP                  ].value;
+    g_lock_reg->pidB_ki                   = (int)params[LOCK_PIDB_KI                  ].value;
+    g_lock_reg->pidB_kd                   = (int)params[LOCK_PIDB_KD                  ].value;
+  //g_lock_reg->pidB_in                   = (int)params[LOCK_PIDB_IN                  ].value;
+  //g_lock_reg->pidB_out                  = (int)params[LOCK_PIDB_OUT                 ].value;
+    g_lock_reg->pidB_ctrl                 = (((int)params[LOCK_PIDB_IFREEZE].value)<<2) + (((int)params[LOCK_PIDB_FREEZE].value)<<1) + ((int)params[LOCK_PIDB_IRST].value);
+  //g_lock_reg->ctrl_B                    = (int)params[LOCK_CTRL_B                   ].value;
+    g_lock_reg->aux_A                     = (int)params[LOCK_AUX_A                    ].value;
+    g_lock_reg->aux_B                     = (int)params[LOCK_AUX_B                    ].value;
+    { /* v2.3.10: stream_ip is a full uint32 written exactly by c/lock; params are
+       * float (24-bit mantissa) and (int) of a value >= 2^31 saturates. Write it
+       * only if the param is not the float echo of the register (keep this block
+       * if the FPGAUPDATE dock is regenerated with config_tool.py). */
+        float ip_v = params[LOCK_STREAM_IP].value;
+        if (ip_v != (float)g_lock_reg->stream_ip)
+            g_lock_reg->stream_ip = (ip_v <= 0.0f) ? 0u :
+                                    (ip_v >= 4294967296.0f) ? 0xffffffffu : (uint32_t)ip_v;
+    }
+    g_lock_reg->stream_port               = (int)params[LOCK_STREAM_PORT              ].value;
+    g_lock_reg->stream_rate               = (int)params[LOCK_STREAM_RATE              ].value;
+    g_lock_reg->stream_cmd                = (int)params[LOCK_STREAM_CMD               ].value;
+  // [FPGAUPDATE DOCK END]
+
+  //TRACE("LOLO: stream_ip = %d \n",  (int)params[LOCK_STREAM_IP                ].value );
+    return 0;
+}
+
+
+int lock_freeze_regs(){
+  //TRACE("LOLO: prev save_read_ctrl = %d \n",  save_read_ctrl );
+  save_read_ctrl          = (uint)g_lock_reg->read_ctrl ;
+  g_lock_reg->read_ctrl   =  g_lock_reg->read_ctrl | 0b00000000000000000000000000000001 ;
+  //TRACE("LOLO: g_lock_reg->read_ctrl = %d \n",  g_lock_reg->read_ctrl );
+  return 0;
+}
+
+int lock_restore_regs(){
+  //TRACE("LOLO: prev save_read_ctrl = %d \n",  save_read_ctrl );
+  g_lock_reg->read_ctrl   =  save_read_ctrl ;
+  //TRACE("LOLO: g_lock_reg->read_ctrl = %d \n",  g_lock_reg->read_ctrl );
+  return 0;
+}
+
+
+/*----------------------------------------------------------------------------------*/
+/**
+ * @brief Update LOCK Controller module towards actual settings FROM THE FPGA REGs
+ *
+ * A function is intended to be called whenever one of the settings is modified BY FPGA
+ *
+ * @param[in] params  Pointer to overall configuration parameters
+ * @retval -1 failure, error message is repoted on standard error device
+ * @retval  0 succesful update
+ */
+int lock_update_main(rp_app_params_t *params)
+{
+
+    //uint32_t  mask16 =   0b00000000000000000000000000001111 ;
+
+    // [PARAMSUPDATE DOCK]
+    params[ 81].value = (float)g_lock_reg->oscA_sw               ; // lock_oscA_sw
+    params[ 82].value = (float)g_lock_reg->oscB_sw               ; // lock_oscB_sw
+    params[ 83].value = (float) ((g_lock_reg->osc_ctrl      )& 0x01) ; // lock_osc1_filt_off
+    params[ 84].value = (float) ((g_lock_reg->osc_ctrl >> 1 )& 0x01) ; // lock_osc2_filt_off
+    params[ 87].value = (float)g_lock_reg->trig_sw               ; // lock_trig_sw
+    params[ 88].value = (float)g_lock_reg->out1_sw               ; // lock_out1_sw
+    params[ 89].value = (float)g_lock_reg->out2_sw               ; // lock_out2_sw
+    params[ 90].value = (float)g_lock_reg->lock_control          ; // lock_lock_control
+    params[ 91].value = (float)g_lock_reg->lock_status           ; // lock_lock_status
+    params[ 92].value = (float)g_lock_reg->lock_trig_val         ; // lock_lock_trig_val
+    params[ 93].value = (float)g_lock_reg->lock_trig_time        ; // lock_lock_trig_time_val
+    params[ 94].value = (float)g_lock_reg->lock_trig_sw          ; // lock_lock_trig_sw
+    params[ 95].value = (float)g_lock_reg->rl_error_threshold    ; // lock_rl_error_threshold
+    params[ 96].value = (float)g_lock_reg->rl_signal_sw          ; // lock_rl_signal_sw
+    params[ 97].value = (float)g_lock_reg->rl_signal_threshold   ; // lock_rl_signal_threshold
+    params[ 98].value = (float) ((g_lock_reg->rl_config      )& 0x01) ; // lock_rl_error_enable
+    params[ 99].value = (float) ((g_lock_reg->rl_config >> 1 )& 0x01) ; // lock_rl_signal_enable
+    params[100].value = (float) ((g_lock_reg->rl_config >> 2 )& 0x01) ; // lock_rl_reset
+    params[101].value = (float)g_lock_reg->rl_state              ; // lock_rl_state
+    params[102].value = (float)g_lock_reg->sf_jumpA              ; // lock_sf_jumpA
+    params[103].value = (float)g_lock_reg->sf_jumpB              ; // lock_sf_jumpB
+    params[104].value = (float) ((g_lock_reg->sf_config      )& 0x01) ; // lock_sf_start
+    params[105].value = (float) ((g_lock_reg->sf_config >> 1 )& 0x01) ; // lock_sf_AfrzO
+    params[106].value = (float) ((g_lock_reg->sf_config >> 2 )& 0x01) ; // lock_sf_AfrzI
+    params[107].value = (float) ((g_lock_reg->sf_config >> 3 )& 0x01) ; // lock_sf_BfrzO
+    params[108].value = (float) ((g_lock_reg->sf_config >> 4 )& 0x01) ; // lock_sf_BfrzI
+    params[109].value = (float)g_lock_reg->signal_sw             ; // lock_signal_sw
+    params[110].value = (float)g_lock_reg->signal_i              ; // lock_signal_i
+    params[111].value = (float)g_lock_reg->sg_amp_sq             ; // lock_sg_amp_sq
+    params[112].value = (float)g_lock_reg->sg_amp_sqF            ; // lock_sg_amp_sqF
+    params[113].value = (float) ((g_lock_reg->lpf_sq      )& 0x1f) ; // lock_lpf_sq_tau
+    params[114].value = (float) ((g_lock_reg->lpf_sq >> 5 )& 0x03) ; // lock_lpf_sq_order
+    params[115].value = (float) ((g_lock_reg->lpf_sqF      )& 0x1f) ; // lock_lpf_sqF_tau
+    params[116].value = (float) ((g_lock_reg->lpf_sqF >> 5 )& 0x03) ; // lock_lpf_sqF_order
+    params[117].value = (float)g_lock_reg->error_sw              ; // lock_error_sw
+    params[118].value = (float)g_lock_reg->error_offset          ; // lock_error_offset
+    params[119].value = (float)g_lock_reg->error                 ; // lock_error
+    params[120].value = ((float) ( g_lock_reg->error_mean >= 0 ? g_lock_reg->error_mean : g_lock_reg->error_mean-32 ))/262144  ; // lock_error_mean
+    lock_error_var    = ((float) (g_lock_reg->error_std))/32 - pow(params[LOCK_ERROR_MEAN].value,2) ;
+    params[121].value = lock_error_var<0 ? -1 : sqrt( lock_error_var )  ; // lock_error_std
+    params[122].value = (float)g_lock_reg->mod_out1              ; // lock_mod_out1
+    params[123].value = (float)g_lock_reg->mod_out2              ; // lock_mod_out2
+    params[124].value = (float)g_lock_reg->gen_mod_sqp           ; // lock_gen_mod_sqp
+    params[125].value = (float)g_lock_reg->gen_mod_phase_sq      ; // lock_gen_mod_phase_sq
+    params[126].value = (float)g_lock_reg->ramp_A                ; // lock_ramp_A
+    params[127].value = (float)g_lock_reg->ramp_B                ; // lock_ramp_B
+    params[128].value = (float)g_lock_reg->ramp_step             ; // lock_ramp_step
+    params[129].value = (float)g_lock_reg->ramp_low_lim          ; // lock_ramp_low_lim
+    params[130].value = (float)g_lock_reg->ramp_hig_lim          ; // lock_ramp_hig_lim
+    params[131].value = (float)g_lock_reg->ramp_reset            ; // lock_ramp_reset
+    params[132].value = (float)g_lock_reg->ramp_enable           ; // lock_ramp_enable
+    params[133].value = (float)g_lock_reg->ramp_direction        ; // lock_ramp_direction
+    params[134].value = (float)g_lock_reg->ramp_sawtooth         ; // lock_ramp_sawtooth
+    params[135].value = (float)g_lock_reg->ramp_B_factor         ; // lock_ramp_B_factor
+    params[136].value = (float)g_lock_reg->sq_ref                ; // lock_sq_ref
+    params[137].value = (float)g_lock_reg->sq_quad               ; // lock_sq_quad
+    params[138].value = (float)g_lock_reg->sq_phas               ; // lock_sq_phas
+    params[139].value = (float)g_lock_reg->in1                   ; // lock_in1
+    params[140].value = (float)g_lock_reg->in2                   ; // lock_in2
+    params[141].value = (float)g_lock_reg->out1                  ; // lock_out1
+    params[142].value = (float)g_lock_reg->out2                  ; // lock_out2
+    params[143].value = (float)g_lock_reg->oscA                  ; // lock_oscA
+    params[144].value = (float)g_lock_reg->oscB                  ; // lock_oscB
+    lock_freeze_regs();
+    params[145].value = (float)g_lock_reg->sqX_28                ; // lock_sqX
+    params[146].value = (float)g_lock_reg->sqY_28                ; // lock_sqY
+    params[147].value = (float)g_lock_reg->sqF_28                ; // lock_sqF
+    params[148].value = (float)g_lock_reg->cnt_clk               ; // lock_cnt_clk
+    params[149].value = (float)g_lock_reg->cnt_clk2              ; // lock_cnt_clk2
+    lock_restore_regs();
+    params[150].value = (float)g_lock_reg->read_ctrl             ; // lock_read_ctrl
+    params[151].value = (float)g_lock_reg->pidA_sw               ; // lock_pidA_sw
+    params[152].value = (float)g_lock_reg->pidA_PSR              ; // lock_pidA_PSR
+    params[153].value = (float)g_lock_reg->pidA_ISR              ; // lock_pidA_ISR
+    params[154].value = (float)g_lock_reg->pidA_DSR              ; // lock_pidA_DSR
+    params[155].value = (float)g_lock_reg->pidA_SAT              ; // lock_pidA_SAT
+    params[156].value = (float)g_lock_reg->pidA_sp               ; // lock_pidA_sp
+    params[157].value = (float)g_lock_reg->pidA_kp               ; // lock_pidA_kp
+    params[158].value = (float)g_lock_reg->pidA_ki               ; // lock_pidA_ki
+    params[159].value = (float)g_lock_reg->pidA_kd               ; // lock_pidA_kd
+    params[160].value = (float)g_lock_reg->pidA_in               ; // lock_pidA_in
+    params[161].value = (float)g_lock_reg->pidA_out              ; // lock_pidA_out
+    params[162].value = (float) ((g_lock_reg->pidA_ctrl                 )& 0x001) ; // lock_pidA_irst
+    params[163].value = (float) ((g_lock_reg->pidA_ctrl            >>1  )& 0x001) ; // lock_pidA_freeze
+    params[164].value = (float) ((g_lock_reg->pidA_ctrl            >>2  )& 0x001) ; // lock_pidA_ifreeze
+    params[165].value = (float)g_lock_reg->ctrl_A                ; // lock_ctrl_A
+    params[166].value = (float)g_lock_reg->pidB_sw               ; // lock_pidB_sw
+    params[167].value = (float)g_lock_reg->pidB_PSR              ; // lock_pidB_PSR
+    params[168].value = (float)g_lock_reg->pidB_ISR              ; // lock_pidB_ISR
+    params[169].value = (float)g_lock_reg->pidB_DSR              ; // lock_pidB_DSR
+    params[170].value = (float)g_lock_reg->pidB_SAT              ; // lock_pidB_SAT
+    params[171].value = (float)g_lock_reg->pidB_sp               ; // lock_pidB_sp
+    params[172].value = (float)g_lock_reg->pidB_kp               ; // lock_pidB_kp
+    params[173].value = (float)g_lock_reg->pidB_ki               ; // lock_pidB_ki
+    params[174].value = (float)g_lock_reg->pidB_kd               ; // lock_pidB_kd
+    params[175].value = (float)g_lock_reg->pidB_in               ; // lock_pidB_in
+    params[176].value = (float)g_lock_reg->pidB_out              ; // lock_pidB_out
+    params[177].value = (float) ((g_lock_reg->pidB_ctrl                 )& 0x001) ; // lock_pidB_irst
+    params[178].value = (float) ((g_lock_reg->pidB_ctrl            >>1  )& 0x001) ; // lock_pidB_freeze
+    params[179].value = (float) ((g_lock_reg->pidB_ctrl            >>2  )& 0x001) ; // lock_pidB_ifreeze
+    params[180].value = (float)g_lock_reg->ctrl_B                ; // lock_ctrl_B
+    params[181].value = (float)g_lock_reg->aux_A                 ; // lock_aux_A
+    params[182].value = (float)g_lock_reg->aux_B                 ; // lock_aux_B
+    params[183].value = (float)g_lock_reg->stream_ip             ; // lock_stream_ip
+    params[184].value = (float)g_lock_reg->stream_port           ; // lock_stream_port
+    params[185].value = (float)g_lock_reg->stream_rate           ; // lock_stream_rate
+    params[186].value = (float)g_lock_reg->stream_cmd            ; // lock_stream_cmd
+    // [PARAMSUPDATE DOCK END]
+
+    lock_update_status(params);
+
+    return 0;
+}
+
+
+/*----------------------------------------------------------------------------------*/
+/**
+ * @brief v2.3.13: Update the lock control status params from the FPGA
+ *
+ * Copies the read only lock_status register (0x1C) to LOCK_LOCK_STATUS and lock_control to
+ * LOCK_LOCK_CONTROL. If lock_control was written from outside the controller (it differs from
+ * the last value written by lock_update()) its bits are copied to the LOCK_CTRL_AUX_* params,
+ * so the web UI shows the commands/configuration written by Python. v2.3.18: the same for
+ * lock_trig_val, lock_trig_time and lock_trig_sw (LOCK_LOCK_TRIG_VAL, _TIME_VAL, _SW). Nothing
+ * is ever written to the FPGA here. Cheap (five register reads): called by rp_get_params() on
+ * every request (also when the scope gets no triggers) and at the end of lock_update_main().
+ *
+ * @param[in] params  Pointer to overall configuration parameters
+ * @retval -1 FPGA not mapped
+ * @retval  0 succesful update
+ */
+int lock_update_status(rp_app_params_t *params)
+{
+    uint32_t lc;
+
+    if(g_lock_reg == NULL)
+        return -1;
+
+    lc = g_lock_reg->lock_control & 0x7ff;
+    params[LOCK_LOCK_STATUS ].value = (float) (g_lock_reg->lock_status & 0xffff);
+    params[LOCK_LOCK_CONTROL].value = (float) lc;
+
+    if(lc != lock_control_written) {
+        params[LOCK_CTRL_AUX_LOCK_NOW        ].value = (float) ((lc >>  0) & 0x01);
+        params[LOCK_CTRL_AUX_LAUNCH_LOCK_TRIG].value = (float) ((lc >>  1) & 0x01);
+        params[LOCK_CTRL_AUX_PIDB_ENABLE_CTRL].value = (float) ((lc >>  2) & 0x01);
+        params[LOCK_CTRL_AUX_PIDA_ENABLE_CTRL].value = (float) ((lc >>  3) & 0x01);
+        params[LOCK_CTRL_AUX_RAMP_ENABLE_CTRL].value = (float) ((lc >>  4) & 0x01);
+        params[LOCK_CTRL_AUX_SET_PIDB_ENABLE ].value = (float) ((lc >>  5) & 0x01);
+        params[LOCK_CTRL_AUX_SET_PIDA_ENABLE ].value = (float) ((lc >>  6) & 0x01);
+        params[LOCK_CTRL_AUX_SET_RAMP_ENABLE ].value = (float) ((lc >>  7) & 0x01);
+        params[LOCK_CTRL_AUX_TRIG_TYPE       ].value = (float) ((lc >>  8) & 0x03);
+        params[LOCK_CTRL_AUX_LOCK_TRIG_RISE  ].value = (float) ((lc >> 10) & 0x01);
+        lock_control_written = lc;
+    }
+
+    /* v2.3.18: lock trigger registers written from outside (see lock_trig_known) */
+    if(lock_trig_known) {
+        int32_t  tv = (int32_t) g_lock_reg->lock_trig_val;
+        uint32_t tt = g_lock_reg->lock_trig_time;
+        uint32_t ts = g_lock_reg->lock_trig_sw;
+        if(tv != lock_trig_val_reg) {
+            params[LOCK_LOCK_TRIG_VAL     ].value = (float) tv;
+            lock_trig_val_reg  = tv;
+            lock_trig_val_par  = (int32_t) params[LOCK_LOCK_TRIG_VAL].value;
+        }
+        if(tt != lock_trig_time_reg) {
+            /* float: above 2**24 ticks the parameter is rounded (<= 128 ticks, 1 us); the register keeps the
+             * exact value, lock_update() does not write it back unless the parameter changes */
+            params[LOCK_LOCK_TRIG_TIME_VAL].value = (float) tt;
+            lock_trig_time_reg = tt;
+            lock_trig_time_par = lock_float_to_u32(params[LOCK_LOCK_TRIG_TIME_VAL].value);
+        }
+        if(ts != lock_trig_sw_reg) {
+            params[LOCK_LOCK_TRIG_SW      ].value = (float) ts;
+            lock_trig_sw_reg   = ts;
+            lock_trig_sw_par   = (uint32_t)(int) params[LOCK_LOCK_TRIG_SW].value;
+        }
+    }
+
+    /* v2.0.0: square generator registers written from outside (see lock_sq_known) */
+    if(lock_sq_known) {
+        uint32_t sp = g_lock_reg->gen_mod_sqp;
+        uint32_t sf = g_lock_reg->gen_mod_phase_sq;
+        if(sp != lock_sq_sqp_reg) {
+            params[LOCK_GEN_MOD_SQP     ].value = (float) sp;
+            lock_sq_sqp_reg   = sp;
+            lock_sq_sqp_par   = lock_float_to_u32(params[LOCK_GEN_MOD_SQP].value);
+        }
+        if(sf != lock_sq_phase_reg) {
+            params[LOCK_GEN_MOD_PHASE_SQ].value = (float) sf;
+            lock_sq_phase_reg = sf;
+            lock_sq_phase_par = lock_float_to_u32(params[LOCK_GEN_MOD_PHASE_SQ].value);
+        }
+    }
+
+    return 0;
+}
