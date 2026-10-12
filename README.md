@@ -13,6 +13,11 @@ instruments built in the FPGA (oscilloscope, square lock-in amplifier, two PIDs,
 automatic lock control) to measure a system with modulation techniques and stabilize it with a feedback
 loop, controlled from a web page or remotely over HTTP.
 
+![Lock captured with the square lock-in at 50 kHz: ctrl_A (blue) and error = sqYo (red), t = 0 at the lock (v2.0.0)](.README/sq_lock_captured_v2.0.0.jpg)
+
+**Repository:** `https://github.com/marceluda/rp_lock-in_pid_sq` (to be created; until then the code lives in the
+local copy, branch `devel2.0`, tag `v2.0.0`).
+
 
 ## Version 2.0.0 (Ecosystem 2.0)
 
@@ -30,6 +35,13 @@ Current version: **2.0.0** (branch `devel2.0`). The major number 2 marks, as in 
 - Everything else as lock_in+pid_harmonic v2.3.18 (see its history in the [CHANGELOG](CHANGELOG.md)). The register
   map changes from `0x054` on: see [doc/FPGA.md](doc/FPGA.md).
 
+Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
+and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real lock at 50 kHz** against a
+simulated peak (5/5, same lock point as the harmonic App), HTTP remote control (`example_usage.py` 15/15), streaming
+at 976 kS/s. Not yet tested: a lock at 31.25 MHz. The FPGA timing does not close in paths inherited from the harmonic
+App (WNS −9.3 ns), while the new square blocks do; the App works. The icon is provisional (the harmonic one).
+Details: [doc/App.md](doc/App.md) and the [CHANGELOG](CHANGELOG.md).
+
 
 ## Features
 
@@ -43,9 +55,9 @@ Current version: **2.0.0** (branch `devel2.0`). The major number 2 marks, as in 
 - Streaming system for continued acquisition of two channels
 - Remote control through HTTP API
 
-**More decimaion values**
+**Decimation values**
 
-| dec    | max oscilloscope lenght |
+| dec    | max oscilloscope length |
 |--------|-------------------------|
 |      1 |             0.131072 ms |
 |      8 |             1.048576 ms |
@@ -99,7 +111,7 @@ https://marceluda.github.io/rp_lock-in_pid/TheApp/install/ and [doc/Devel.md](do
 ## Building
 
 To build or modify the App you need a linux development environment with:
-  - Vivado 2015.2 (environment of the C controller / web App build)
+  - Vivado 2015.2 (only because `settings.sh` sources it for the C controller / web App build)
   - gcc-linaro-4.9-2015.02-3-x86_64_arm-linux-gnueabihf (installed on `/opt/linaro/gcc-linaro-4.9-2015.02-3-x86_64_arm-linux-gnueabihf/`)
   - Vivado 2020.1 (for the FPGA design), in `/tools/Xilinx/Vivado/2020.1`
 

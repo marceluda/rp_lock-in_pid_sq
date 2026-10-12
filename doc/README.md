@@ -1,8 +1,10 @@
 # RP Square Lock-in+PID — documentation
 
 Documentation of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.0** (branch `devel2.0`, Ecosystem 2.0, FPGA built
-with Vivado 2020.1), derived from `lock_in+pid_harmonic` v2.3.18. App.md and FPGA.md describe the square
-generator and lock-in of this App; the other pages come from the harmonic App (see the note at their top). Back to the [project README](../README.md) · [CHANGELOG](../CHANGELOG.md).
+with Vivado 2020.1), derived from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`). All the pages describe this App;
+data measured on the board come from the tests of 2026-10-12 (builds 2.0.0-5 and 2.0.0-6), and the values inherited
+from the harmonic App that were not measured again say so. Back to the [project README](../README.md) ·
+[CHANGELOG](../CHANGELOG.md).
 
 | Document | Contents |
 |---|---|
@@ -22,4 +24,6 @@ Design notes kept with the sources (`lock_in+pid_square/doc/`):
 The register table that this file had before (a copy of `lock_in+pid_square/c/lock.txt`) is now
 [FPGA.md](FPGA.md), checked against the RTL.
 
-Screenshots of the web interface are in the hidden folder `.Usage/`, and the figures of the remote control in `.Remote/`.
+Screenshots of the web interface are in the hidden folder `.Usage/` (`sq_*`: this App; the others: panels shared
+with lock_in+pid_harmonic, marked in their captions), and the figures of the remote control in `.Remote/` (taken with
+lock_in+pid_harmonic).

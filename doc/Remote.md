@@ -3,14 +3,11 @@
 How to control `lock_in+pid_square` **v2.0.0** from a program, without the web page. The registers are
 described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.md).
 
-> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
-> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
-> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
-> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
-> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
-> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
-> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
-> of the harmonic App.
+The HTTP API, the C tools and the Python client are the ones of `lock_in+pid_harmonic` v2.3.18 with the names and
+offsets of this App (square generator `gen_mod_sqp` / `gen_mod_phase_sq`, square lock-in `sqX_28` / `sqY_28` /
+`sqF_28`, `lpf_sq` / `lpf_sqF`, `sg_amp_sq` / `sg_amp_sqF`) and square helpers in `control_finn.py`.
+Version numbers "v2.3.x" in this page refer to the history of lock_in+pid_harmonic, from which this code comes
+(this App starts at 2.0.0 with all of it).
 
 - [Options](#options)
 - [HTTP API](#http-api)
@@ -48,9 +45,12 @@ PL). The App is loaded by opening its page once (or by `http://rp-XXXXXX.local/b
 Do not use the endpoints while another App is loaded: `c/lock` and `c/osc` access the FPGA addresses
 directly.
 
-Since v2.3.15 the whole HTTP remote control (registers, scope acquisitions, PID, ramp, lock-in, lock) works on
-Ecosystem 2.0; it was tested on the board with `control_finn.py` and `example_usage.py` in v2.3.15-2.3.17
-(`reportes/lock-in_pid_h.md`, sections v2.3.15 to v2.3.17).
+The whole HTTP remote control (registers, scope acquisitions, PID, ramp, square lock-in, lock) works on
+Ecosystem 2.0. With this App it was tested on RP2 (2.0.0-5 and 2.0.0-6, `reportes/lock-in_pid_sq.md` step 5):
+`example_usage.py` cell by cell up to the streaming cell, **15/15 cells OK, 0 warnings** (frequencies 10 kHz,
+31.25 MHz and 50 kHz, phase 90°, filters, `get_XY`, PID, ramp, lock by time / level / now and release), exact
+writes above 2²⁴ through `/lock`, and `py/lock_from_registers.py` on the board. The code common with
+lock_in+pid_harmonic was also tested there in v2.3.15-2.3.18 (`reportes/lock-in_pid_h.md`).
 
 ## HTTP API
 
@@ -67,10 +67,10 @@ query as arguments and returns its output as plain text, one line `name:value` p
 
 | Query | Command run | Effect |
 |---|---|---|
-| (none) | `c/lock` | read all the 99 registers |
+| (none) | `c/lock` | read all the 91 registers |
 | `?in1` or `?in1=` | `c/lock in1` | read `in1` |
 | `?aux_A=5` | `c/lock aux_A 5` | write 5 to `aux_A` and read it back |
-| `?oscA_sw=12&in1&in2` | `c/lock oscA_sw 12 in1 in2` | several reads and writes (order not guaranteed) |
+| `?oscA_sw=12&in1&in2` | `c/lock oscA_sw 12 in1 in2` | several reads and writes (order not guaranteed); 12 = `sq_ref` |
 
 Rules (from `nginx.conf` and `c/lock.c`):
 
@@ -79,7 +79,8 @@ Rules (from `nginx.conf` and `c/lock.c`):
 - The arguments come from a Lua table, so **the order of several arguments in one request is not
   guaranteed**. When the order matters (e.g. the two writes of a lock request) use one request per write.
 - Values are decimal. Signed registers accept negative values (two's complement is done by the FPGA).
-  Unsigned 32-bit registers accept 0..4294967295 (e.g. `stream_ip`, `lock_trig_time`); a negative value is
+  Unsigned 32-bit registers accept 0..4294967295 (e.g. `stream_ip`, `lock_trig_time`, `gen_mod_sqp`,
+  `gen_mod_phase_sq`), written exactly (`gen_mod_sqp` = 16789561 read back unchanged on the board); a negative value is
   rejected for unsigned registers narrower than 32 bits.
 - Errors (answer text, HTTP 200): `ERROR: parameter 'x' not found` (stops at the unknown name),
   `ERROR: <name> is read-only and cannot be written`,
@@ -97,13 +98,14 @@ curl "http://rp-XXXXXX.local/lock_in+pid_square/lock?lock_status&lock_control"
 ```
 
 The register list (name, index, signed, read-only, min, max) is served at
-`/lock_in+pid_square/c/lock.txt` (ranges of v2.3.15, see [FPGA.md](FPGA.md#register-description-files-locktxt-osctxt)).
+`/lock_in+pid_square/c/lock.txt` (see [FPGA.md](FPGA.md#register-description-files-locktxt-osctxt)). The offsets
+of this App differ from lock_in+pid_harmonic from `0x054` on: always address registers **by name**.
 
 **Reading live signals.** Up to v2.3.16, about 2-3 % of the bus reads of a signal that changes on every clock
 (`in1` while it crosses zero, `oscA` showing `in1`) returned 32 bits of garbage (e.g. `0x0118c9c1`), out of the
-14-bit range. Averages of `in1` read through `/lock` with an older FPGA must discard impossible values. Since
-v2.3.17 (new FPGA image) the reads are exact: 0 bad reads in 8·10⁶ dense reads on the board
-(`reportes/lock-in_pid_h.md`, v2.3.17; cause and fix in [FPGA.md](FPGA.md#lock-module-0x40600000)). The value
+14-bit range. This App has the fix of v2.3.17 from the start: the reads are exact (0 bad reads in 8·10⁶ dense
+reads on the board with lock_in+pid_harmonic v2.3.17, `reportes/lock-in_pid_h.md`; cause and fix in
+[FPGA.md](FPGA.md#lock-module-0x40600000)). The value
 read is the one of the clock before the read (one more clock of latency, bus reads only).
 
 ### `/osc`: oscilloscope registers and memory
@@ -242,7 +244,7 @@ rp.ip                             # IP used for all the requests (host name reso
 
 rp.lock.aux_A                     # read one register
 rp.lock.aux_A = 5                 # write one register (integers only)
-rp.lock.oscA_sw = 'cos_ref'       # selectors accept the labels of the UI (reg_labels)
+rp.lock.oscA_sw = 'sq_ref'        # selectors accept the labels of the UI (reg_labels)
 rp.lock.get()                     # dict with all the lock registers
 rp.lock.get('in1 in2 error')      # several registers
 rp.lock.set({'aux_A': 0, 'aux_B': 0})
@@ -272,16 +274,19 @@ is used as before. An object loaded from a `.npy` file does not resolve until `r
 ### Oscilloscope acquisitions
 
 ```python
-rp.lock.oscA_sw = 'cos_ref'; rp.lock.oscB_sw = 'sin_ref'
+rp.lock.oscA_sw = 'sq_ref'; rp.lock.oscB_sw = 'sq_quad'
 tt, ch1, ch2 = rp.acquire('A_rising', dec=256, trig_pos=20)      # measure + wait + curv, volts
 tt, ch1, ch2 = rp.acquire('manual', dec=64, trig_pos=0.5, raw=True)
-rp.lock.trig_sw = 'Scan floor'
+rp.lock.trig_sw = 'Scan floor'      # or 'Square mod.': one trigger per period of the square generator
 tt, ch1, ch2 = rp.acquire('ext_rising', dec=1024, trig_pos=0.1, timeout=20)   # lock module trigger
 rp.plot_meas()
 rp.scope_auto()                   # give the scope back to the web page (Auto)
 ```
 
-![acquire('A_rising', dec=256, trig_pos=20) of cos_ref / sin_ref on the board (v2.3.15)](.Remote/acquire_A_rising_cos_ref.png)
+![acquire('A_rising', dec=256, trig_pos=20) on the board (figure of lock_in+pid_harmonic v2.3.15: harmonic references cos_ref / sin_ref; with this App the same call shows the square sq_ref / sq_quad)](.Remote/acquire_A_rising_cos_ref.png)
+
+Board test with this App: `acquire('manual', dec=8)` → 16384 samples; with OscA = `sq_ref` and OscB = `sq_quad` at
+decimation 1 the period of 4 ticks and the 1-tick quadrature delay at 31.25 MHz are seen sample by sample.
 
 | Method | What it does |
 |---|---|
@@ -317,14 +322,18 @@ scope keeps running) `measure()` / `acquire()` raise **`WebScopeNotStopped`** (a
 or acquire anyway with `stop_web_scope=False`. With the page open, `acquire()` puts it in Single (the page
 shows *Mode = Single*):
 
-![The web page in Single after an acquire() from Python (v2.3.16)](.Remote/web_page_single_by_python.png)
+![The web page in Single after an acquire() from Python (lock_in+pid_harmonic v2.3.16)](.Remote/web_page_single_by_python.png)
 
-Tested on the board (v2.3.16-30): the first `acquire()` made 2 POST (0.67 s), the next 60 made 0 POST
+With this App (2.0.0-6, page without focus): `acquire()` → the page in Single ~0.2 s later; `scope_auto()` → the
+page back in Auto after 1.2–1.8 s (3/3). If a field of the page has the focus the change is applied when the edit
+ends.
+
+Tested on the board with lock_in+pid_harmonic (v2.3.16-30): the first `acquire()` made 2 POST (0.67 s), the next 60 made 0 POST
 (0.35-0.40 s each); the page put back in Auto between two acquisitions was detected by the GET check (2 POST,
 data not mixed); with an unreachable host `WebScopeNotStopped` came after 2.4 s (3 attempts). Without the stop
 (`stop_web_scope=False`, controller in Auto) 3/3 traces were mixed and `check_not_overwritten()` did not warn.
 
-![10th acquire('manual', dec=8) in a row, no manual POST: no jump at t = 0 (v2.3.16)](.Remote/acquire_manual_dec8.png)
+![10th acquire('manual', dec=8) in a row, no manual POST: no jump at t = 0 (lock_in+pid_harmonic v2.3.16)](.Remote/acquire_manual_dec8.png)
 
 Limits of the checks (docstrings of `check_not_overwritten()` and `_web_still_stopped()`): a worker re-arming
 with the same `Dec` / `TrgDelay` as `measure()` is not detected by `check_not_overwritten()` (only the default
@@ -334,17 +343,20 @@ a reference (`measure(wait=False)` and no `wait()`) a re-arm that has already fi
 
 ### Lock-in, PID, ramp and lock helpers
 
-Added in v2.3.15 (each one writes only the arguments given and returns the resulting state):
+Each one writes only the arguments given and returns the resulting state. The lock-in helpers are the ones of
+this App (`control_finn.py` l. 1205-1415):
 
 | Method | What it does |
 |---|---|
-| `rp.set_signal(sw)` | lock-in input `signal_sw` (`'in1'`, `'in2'`, `'in1-in2'`, `'cos_ref'`, `'sin_ref'`, `'cos_1f'`, `'aux_A'`, `'Ramp A'`) |
-| `rp.get_freq()`, `rp.get_period()`, `rp.set_freq(hp)`, `rp.set_freq_hz(f)` | modulation frequency (`gen_mod_hp` 0..16383; `set_freq_hz` takes the closest value, 3.03 Hz .. 49.603 kHz) |
-| `rp.set_phase(val)` | phase of `cos_1f..3f`, 0..2519 (returns degrees) |
-| `rp.set_modulation_amplitud(val, ch='out1')` | `mod_out1`/`mod_out2` (−1 off .. 8191; returns the amplitude in V, `val/16384`) |
-| `rp.set_lpf(tau_exponent, order, line)`, `rp.get_lpf(line=None)` | low-pass filters: τ = 8 ns·2^tau_exponent (14..29), order 0..2, `line` `'ref'` (X,Y), 1, 2, 3, `'all'` or a list |
-| `rp.set_gain(line, amp)` | `sg_amp0..3` (exponent or label `'x32'`; returns the factor) |
-| `rp.get_XY(units='V', F=False)` | X, Y (and F1..F3) from the 28-bit registers, read at the same instant (`read_ctrl[0]`). X from `cos_ref` (in phase), Y from `sin_ref` |
+| `rp.set_signal(sw)` | lock-in input `signal_sw` (`'in1'`, `'in2'`, `'in1-in2'`, `'sq_ref'`, `'sq_quad'`, `'sq_phas'`, `'aux_A'`, `'Ramp A'`) |
+| `rp.set_freq(val)` | writes `gen_mod_sqp` (0..2³²−1): f = 125 MHz / (2·(val + 1)); 0 → 62.5 MHz (no quadrature), 1 → 31.25 MHz, 1249 → 50 kHz. Returns f in Hz |
+| `rp.set_freq_hz(freq, quadrature=True)` | nearest frequency (0.029 Hz .. 31.25 MHz); with `quadrature=True` only **odd** `gen_mod_sqp` values (sq_quad exactly 90°): 31.25 MHz → 1, 50 kHz → 1249, 1 MHz → 61 (1.008 MHz); `quadrature=False` allows 62.5 MHz (→ 0). Checked on the board |
+| `rp.get_freq()`, `rp.get_period()` | frequency [Hz] / period [s] from `gen_mod_sqp` |
+| `rp.set_phase(val, units='ticks')` | `gen_mod_phase_sq`: delay of `sq_phas` / sqF in ticks (0..P−1, else `ValueError`), or `units='deg'` / `'rad'` with the current period: at 50 kHz `set_phase(90, 'deg')` → 625, `set_phase(np.pi, 'rad')` → 1250 (board). Returns degrees. At 31.25 MHz: steps of 90° |
+| `rp.set_modulation_amplitud(val, ch='out1')` | `mod_out1` (OUT1 ± val/2 with `sq_ref`) / `mod_out2` (OUT2 ± val/2 with `sq_quad`); −1 off .. 8191. Returns the peak amplitude in V (`val/16384`) |
+| `rp.set_lpf(tau_exponent=10, order=2, line='xy')`, `rp.get_lpf(line=None)` | filters: τ = 8 ns·2^tau_exponent, **tau_exponent 3..30** (64 ns .. 8.6 s), order 0..2; `line` `'xy'` (also `'ref'`, `'x'`, `'y'`, 0: `lpf_sq`), `'f'` (1: `lpf_sqF`), `'all'` or a list. Register = `order << 5 | (tau_exponent − 3)` |
+| `rp.set_gain(line, amp)` | `sg_amp_sq` (`line='xy'`) / `sg_amp_sqF` (`'f'`), exponent 0..15 or label `'x32'`; returns the factor |
+| `rp.get_XY(units='V', F=False)` | sqX, sqY (and sqF with `F=True`) from the 28-bit registers, read at the same instant (`read_ctrl[0]`): `sq?_28 / 2^13` counts, / 8192 for volts (with the calibration of `/calib` for in1/in2). sqX from `sq_ref` (in phase), sqY from `sq_quad`. A square input of amplitude A in phase reads A; a sine (2/π)·A·cos φ |
 | `rp.set_pid(pid='A', sw, sp, kp, ki, kd, PSR, ISR, DSR, SAT, ctrl)`, `rp.get_pid(pid)`, `rp.pid_reset(pid)` | PID A / B (labels accepted: `PSR='/1024'`, `ISR='537 ms'`); `get_pid` adds `in`, `out` and the effective `enabled` from `lock_status`; `pid_reset` pulses the integrator reset |
 | `rp.set_ramp(step, low, high, enable, sawtooth, direction, B_factor, reset)`, `rp.get_ramp()` | ramp registers (`step` = `ramp_step`: a **smaller** step is a **faster** ramp) |
 | `rp.set_manual(ramp, pidA, pidB)` | manual enables (`lock_control` bits 4:2, the *Scan enable* / *PID A* / *PID B* buttons); a change while LOCKED releases the lock |
@@ -375,25 +387,39 @@ each helper are shown where they matter, with the `lock_get` / `lock_set` helper
 
 ### Configure the lock-in
 
+The lock-in of the `lock_mode` test configuration (`test_files/lock_in+pid_square__lock_mode.json`, Apps folder):
+
 ```python
 rp.set_signal('in1')                              # lock-in input (signal_sw = 0)
-rp.set_freq(0)                                    # modulation 125e6/2520 = 49.6 kHz (gen_mod_hp = 0)
-rp.set_phase(0)                                   # phase of cos_1f..3f (2520 = 360 deg)
-rp.set_modulation_amplitud(100, ch='out1')        # add cos_ref with ~50 counts (~6 mV) to OUT1 (mod_out1)
-rp.set_lpf(tau_exponent=15, order=2, line='ref')  # X,Y: tau = 8 ns * 2**15 = 262 us (lpf_F0 = 2<<4 | 1)
-rp.set_gain('ref', 'x32')                         # Xo, Yo gain x32 (sg_amp0 = 5)
-rp.lock.error_sw = 'Yo'                           # error = Yo (error_sw = 2)
+rp.set_freq_hz(50e3)                              # gen_mod_sqp = 1249: 50 kHz, sq_quad at 90 deg
+# rp.set_freq(1)                                  # 31.25 MHz (P = 4 ticks), the maximum with quadrature
+rp.set_phase(0)                                   # sq_phas / sqF delay (ticks); rp.set_phase(90, units='deg') -> 625
+rp.set_modulation_amplitud(100, ch='out1')        # OUT1 +-50 counts (+-6.1 mV) with sq_ref (mod_out1 = 100)
+rp.set_lpf(tau_exponent=15, order=2, line='xy')   # sqX, sqY: tau = 8 ns * 2**15 = 262 us (lpf_sq = 2<<5 | 12 = 76)
+rp.set_gain('xy', 'x32')                          # sqXo, sqYo gain x32 (sg_amp_sq = 5)
+rp.lock.error_sw = 'sqYo'                         # error = sqYo (error_sw = 2)
 rp.lock.error_offset = 0
-print(rp.get_XY())                                # X, Y in volts, read at the same instant
+print(rp.get_XY(), rp.get_XY(units='int', F=True))
 ```
 
 `get_XY()` freezes the copies with `read_ctrl[0]`; by hand:
 
 ```python
 lock_set('read_ctrl', 1)                      # freeze the copies
-r = lock_get('X_28', 'Y_28')
+r = lock_get('sqX_28', 'sqY_28', 'sqF_28')
 lock_set('read_ctrl', 0)
-X, Y = r['X_28'] / 2**11 / 8192, r['Y_28'] / 2**11 / 8192    # volts, amplitude of each component
+X, Y = r['sqX_28'] / 2**13 / 8192, r['sqY_28'] / 2**13 / 8192    # volts (8192 counts = 1 V), before the gain
+```
+
+The same with registers only:
+
+```python
+lock_set('gen_mod_sqp', 1249)                 # f = 125e6 / (2*(1249+1)) = 50 kHz
+lock_set('gen_mod_phase_sq', 625)             # 90 deg at 50 kHz (P = 2500 ticks)
+lock_set('mod_out1', 100)
+lock_set('lpf_sq', 2 << 5 | 12)               # order 2, tau = 8 ns * 2**(12+3) = 262 us
+lock_set('sg_amp_sq', 5)
+lock_set('error_sw', 2)                       # sqYo
 ```
 
 ### Configure a PID and the ramp
@@ -418,7 +444,8 @@ Ramp period: `T = (high − low) · (step + 1) · 8 ns · (2 − sawtooth)` ([FP
 
 The lock control is commanded only with `lock_control` and observed in `lock_status`
 ([`lock_control.md`](../lock_in+pid_square/doc/lock_control.md) §5). With `control_finn.py`
-(the Lock cell of `example_usage.py`, LOCKED in 0.08-0.10 s on the board, v2.3.17):
+(the Lock cell of `example_usage.py`, which first restores the lock-in and PID A of `lock_mode`; LOCKED by time,
+level and Lock Now on the board with this App, 2.0.0-5):
 
 ```python
 # time trigger: 16.58 ms after the scan floor (shorter than half the ramp period), PID A on while locked
@@ -450,7 +477,7 @@ def lock_control_value(now=0, launch=0, manual=('ramp',), final=('pidA',), trig_
     return v | (trig_type & 3) << 8 | (rise & 1) << 10
 
 lock_set('lock_trig_time', round(16.58e-3 / 8e-9))      # 2072500 ticks of 8 ns (0 .. 2**32-1)
-# (level trigger instead: lock_trig_sw = 0 (error), lock_trig_val = 5085, trig_type = 2)
+# (level trigger instead: lock_trig_sw = 0 (error), lock_trig_val = 4000, trig_type = 2)
 base = lock_control_value(trig_type=1)                  # 0x550 = 1360
 lock_set('lock_control', base)                          # configuration without request (releases a lock)
 lock_set('lock_control', base | 2)                      # arm (Trigger Lock); base | 1 = Lock Now
@@ -464,14 +491,14 @@ Notes:
 
 - A lock request needs a **0→1 edge** of bit 0 or 1: write the value without the request first. Writing
   the same value again does nothing (so the C controller rewriting registers does not disturb a lock).
-- The ramp runs only if `ramp_enable` (0x0B0) is also 1.
+- The ramp runs only if `ramp_enable` (0x0A0) is also 1.
 - Changing a manual enable (bits 4:2) while LOCKED releases the lock.
 - `lock_trig_time` is 32 bits unsigned since v2.3.15 (up to 34.36 s; before, values ≥ 2³¹ aliased). Written
   through `/lock` the value is exact; written from the web page it is rounded to float32 above 2²⁴ ticks
   ([FPGA.md](FPGA.md#lock-control-auto-lock), note on `lock_trig_time`).
 - On the board, `python3 py/lock_from_registers.py --trig time --time 16.58ms --set pidA` does the same
-  (with `--status`, `--release`, `--now`, `--force`); tested on the board, locked in 0.062 s
-  (`reportes/lock-in_pid_h_lock_test/2026-10-08_22:45:40_lock.md` §2.5).
+  (with `--status`, `--release`, `--now`, `--force`, `--sw`); tested with this App: LOCKED in 0.006 s, `--time 40s`
+  clamped to 4294967295 and shown by the page as "T = 34.360 s" (`reportes/lock-in_pid_sq.md` step 5).
 
 ### Read an oscilloscope acquisition
 
@@ -509,8 +536,9 @@ rp.streaming_stop()                                     # stream_cmd = 0
 ```
 
 The receiver (`resources/streaming/server`, or `nc -l <port> > file.bin`) and the format of the data are
-described in `resources/README.md` (`resources/streaming/read_bin.py` reads the file). The streaming cell of
-`example_usage.py` was not part of the v2.3.15-2.3.17 tests (streaming was tested in v2.3.10, [App.md](App.md#streaming)).
+described in `resources/README.md` (`resources/streaming/read_bin.py` reads the file). Streaming from the page was
+tested with this App (976 kS/s at decimation 128, overrun 0); the streaming cell of `example_usage.py` was not run
+(**a confirmar**).
 
 ## Running on the board: `c/` and `py/`
 
@@ -519,7 +547,7 @@ On the board (`ssh root@rp-XXXXXX.local`), in `/opt/redpitaya/www/apps/lock_in+p
 ```bash
 c/lock                      # all lock registers
 c/lock in1 in2 out1 out2    # read some
-c/lock oscA_sw 12 in1       # write and read
+c/lock oscA_sw 12 in1       # write and read (12 = sq_ref)
 c/osc                       # scope registers (21, with TrgUnlock)
 c/osc dump                  # buffers + registers
 python3 py/lock_from_registers.py --status
@@ -532,7 +560,8 @@ scripts: `lock.py`/`osc.py` (read/write like `c/lock`/`c/osc`), `lock_reg_table.
 `hugo.py` unlocks the 2.0 trigger before writing the source (`start_trigger()`, since v2.3.10), but
 `osc_trig.py` waits for `TrgSrc == 0` to detect the end, which is not valid on the 2.0 scope (bit 5 stays at
 1, [above](#osc-oscilloscope-registers-and-memory)): it probably ends with "memory read error" (**a confirmar**).
-The scripts other than `lock_from_registers.py` have not been re-tested on the 2.0 version (**a confirmar**).
+The scripts other than `lock_from_registers.py` have not been tested with this App (**a confirmar**);
+`hugo.py` has the register table of this App (generated by `config_tool.py`).
 Running them creates `py/__pycache__/` on the board (harmless).
 
 ## SSH version (deprecated)
@@ -541,15 +570,18 @@ Running them creates `py/__pycache__/` on the board (harmless).
 `config_RP.py`, …) controls the App by running the `py/` scripts on the board through SSH. It predates the
 HTTP API and is kept only for specific cases (e.g. long acquisitions written on the board). v2.3.13 fixed
 `launch_lock()`/`lock_now()` and added `release_lock()`/`lock_status()` in `control_hugo.py`. New scripts
-should use the HTTP API.
+should use the HTTP API. It was **not tested with this App** (a confirmar); in `control_hugo.py` the default
+`AppName` of `red_pitaya_lock()` is `'lock-in_pid'` (l. 399: pass `AppName='lock_in+pid_square'`), and `loadApp()` /
+`osc_trig_fire(wait=True)` call `py/load_app.py` and `py/wait_trig.py` (l. 476, 760), which are not in `py/`.
 
 ## Coexistence with the web page
 
 - The web page and a script can be used at the same time: the page reads the registers on every request
   and shows changes made from outside (e.g. a lock closed from Python), without sending anything back.
-- The C controller writes `lock_control` only when the user changes a lock button or checkbox, and (v2.3.18)
-  `lock_trig_time`, `lock_trig_val`, `lock_trig_sw` only when the user changes them; values written to these
-  four registers from a script are copied to the parameters of the page (shown and kept). **The other lock
+- The C controller writes `lock_control` only when the user changes a lock button or checkbox, and
+  `lock_trig_time`, `lock_trig_val`, `lock_trig_sw`, `gen_mod_sqp`, `gen_mod_phase_sq` only when the user changes
+  them; values written to these six registers from a script are copied to the parameters of the page (shown and
+  kept; above 2²⁴ the page shows a rounded value but does not rewrite the register). **The other lock
   registers are rewritten with the controller's copy when the user changes any lock parameter in the
   page**, so a value written from a script can be overwritten by a later change in the page
   (`py/lock_from_registers.py` docstring).

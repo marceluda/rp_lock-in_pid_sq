@@ -22,7 +22,27 @@ exist for this App).
 
 ## v2.0.0 (2026-10-11)
 
-First version. Built from `lock_in+pid_harmonic` v2.3.18; not yet tested on a board.
+First version. Built from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`). Tested on the board
+with builds 5 and 6 (see Notes).
+
+### Notes
+
+- Board tests (RP2, RedPitaya_OS 2.04-35, `dummy_simulator` on a second board; testAgent 2026-10-12): generator
+  exact to the tick (period 4 ticks and quadrature 1 tick at 31.25 MHz, 2500 / 625 at 50 kHz, phase 0..P−1,
+  "Square mod." trigger stable); lock-in at 50 kHz equal to the correlation from the scope (sqX 204.6 / sqY 567.6
+  vs 207 / 562 counts; sqF follows the phase); real lock at 50 kHz with error = sqYo by time, level and Fire on click
+  (5/5, ctrl_A 8.5–8.8 mV, the same point as lock_in+pid_harmonic); HTTP remote control (`example_usage.py` 15/15,
+  exact `gen_mod_sqp` above 2^24 kept); streaming 976 kS/s, overrun 0; Config save/load without read-only keys;
+  unit fields; Restart. Test configuration: `test_files/lock_in+pid_square__lock_mode.json` (Apps folder).
+- Not tested yet: a lock at 31.25 MHz (the input filter of the simulator has to be turned off), re-lock, step
+  response, DIO7_N output, the SSH client and the `py/` scripts other than `lock_from_registers.py`.
+- FPGA timing (build 4): WNS −9.308 ns / TNS −5095 ns in the paths inherited from lock_in+pid_harmonic; every path
+  of the new square generator / lock-in has positive slack.
+- Documentation (2026-10-12, docAgent): `README.md` and `doc/` written for this App: `App.md` and `FPGA.md` reviewed
+  against the RTL and completed with the board results; `Usage.md` (square panels, unit fields, procedures with the
+  test configuration and screenshots of this App in `doc/.Usage/sq_*`), `Structure.md` (Mermaid diagram of the square
+  generator / lock-in), `Remote.md` (square helpers of `control_finn.py`, recipes) and `Devel.md` (sources, tests,
+  timing, versioning) rewritten from the pages inherited from lock_in+pid_harmonic.
 
 ### Fixes after the first test on the board (2.0.0-5, testAgent 2026-10-12), same 2.0.0 (build 6, FPGA unchanged)
 
@@ -137,7 +157,8 @@ First version. Built from `lock_in+pid_harmonic` v2.3.18; not yet tested on a bo
 
 ## Pending
 
-- Test on the board (RP2 with `dummy_simulator` on RP1): scan, lock-in at 50 kHz and at 31.25 MHz, lock.
-- Icon of the App.
-- `doc/Usage.md`, `doc/Structure.md`, `doc/Remote.md`, `doc/Devel.md`: written for the harmonic App (a note at
-  the top of each page explains the correspondence); screenshots of the square panels.
+- Lock at 31.25 MHz on the board (`dummy_simulator` with its input filter off).
+- Icon of the App (provisional: the one of lock_in+pid_harmonic).
+- GitHub repository `rp_lock-in_pid_sq` (to be created).
+- Screenshots still missing in `doc/`: Square Lock-in display opened, sqF tab, Auxiliar / Square Modulation
+  Amplitude, Outputs and Oscilloscope panels of this App, a scan with sqXo / sqYo.

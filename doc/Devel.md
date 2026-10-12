@@ -3,14 +3,10 @@
 How to build, modify, test and install `lock_in+pid_square` v2.0.0 (branch `devel2.0`). The internal
 structure is explained in [Structure.md](Structure.md) and the registers in [FPGA.md](FPGA.md).
 
-> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
-> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
-> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
-> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
-> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
-> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
-> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
-> of the harmonic App.
+The build system, tools and tests are the ones of `lock_in+pid_harmonic` v2.3.18 (this repository was created as a
+copy of `rp_lock-in_pid_h` with its git history, see the [CHANGELOG](../CHANGELOG.md#origin)), renamed to
+`lock_in+pid_square`, with the square generator / lock-in and their own tests. "v2.3.x" in the comments of the
+sources refers to that history.
 
 - [Source tree](#source-tree)
 - [Software requirements](#software-requirements)
@@ -41,7 +37,8 @@ rp_lock-in_pid_sq/
 │   ├── remote_control/http_version/   # control_finn.py, example_usage.py (HTTP API client)
 │   ├── remote_control/shh_version/    # SSH client (deprecated)
 │   ├── streaming/           # TCP receiver for the streaming (server.c, read_bin.py)
-│   ├── process_web_download/, rp_cmds/, code_helpers/ (muxer generator, sin/cos tables)
+│   ├── process_web_download/, rp_cmds/, code_helpers/ (muxer generator; gen_sin_cos.py, not used by this App)
+│   ├── icon.png, logo.*     # graphics (the icon of the App is still the harmonic one, provisional)
 │   └── README.md            # streaming and remote control notes
 └── lock_in+pid_square/    # the App (this folder is what is installed on the board)
     ├── Makefile             # controller, c tools, FPGA, target/, zip, tar, upload
@@ -62,14 +59,14 @@ rp_lock-in_pid_sq/
     │   └── Makefile
     ├── c/                   # tools run on the board: lock, osc, streaming, stream_tcp_osc_cmd
     │   ├── *.c, Makefile, lock.txt, osc.txt, load_bit.sh, stream_start.sh
+    │   └── lock_offsets.h   # generated from lock.txt by c/Makefile (offsets of stream_*), not versioned
     ├── py/                  # Python scripts run on the board (hugo.py, lock_from_registers.py, ...)
     ├── fpga/                # FPGA project (Vivado 2020.1, RedPitaya-FPGA structure)
     │   ├── Makefile  README.md  red_pitaya_vivado_Z10.tcl  synCheck.sh
     │   ├── rtl/rtl/         # common Red Pitaya RTL (classic/rp_scope_*.v modified by this App)
-    │   ├── prj/v0.94/rtl/   # red_pitaya_top.sv, red_pitaya_ps.sv, lock.v, lock/*.v
+    │   ├── prj/v0.94/rtl/   # red_pitaya_top.sv, red_pitaya_ps.sv, lock.v, lock/*.v (gen_mod_sq.v, LP_filter_sq.v, ...)
     │   ├── prj/v0.94/{ip,sdc}, prj/barebones/ip, sdc/, brd/
     │   └── prj/v0.94/out/   # build products (not versioned)
-    ├── fpga_old_2015.2/     # previous Vivado 2015.2 design (not versioned; in git history at v0.3.10)
     ├── doc/                 # design notes: lock_control.md, lock_capture.md (+ Doxygen setup)
     ├── test/                # simulations (xsim, node, native C)
     ├── upload_app.sh        # upload a package to a board through SSH
@@ -159,7 +156,7 @@ Root `Makefile`:
 | `all` | `controllerhf.so` + `c_tools` + `fpga` |
 | `app` | `controllerhf.so` + `c_tools` |
 | `controllerhf.so` | builds three variants of the controller: `controllerhf_dbg.so` (DEBUG on), `controllerhf_rld.so` (RELOAD dock) and `controllerhf.so` (the one packaged), editing `src/main.h` / `src/main.c` with `sed` between builds |
-| `c_tools` | `make -C c all` (cross compiled `lock`, `osc`, `streaming`, `stream_tcp_osc_cmd`) |
+| `c_tools` | `make -C c all` (cross compiled `lock`, `osc`, `streaming`, `stream_tcp_osc_cmd`; `c/lock_offsets.h` is generated from `c/lock.txt` first) |
 | `fpga` | `red_pitaya.bit` (from `fpga/`), `fpga.bit` (copy) and `fpga.bit.bin` (bootgen) |
 | `target/lock_in+pid_square` | staging of the installable folder (also copies `upload_app.sh`, `resources/`, README, CHANGELOG; sets the version in `info.json` and `index.html`; removes `__pycache__`/`*.pyc`) |
 | `zip`, `tar` | packages in `../archive/` |
@@ -193,7 +190,7 @@ RPSCP=-P 22
 |---|---|---|
 | `lock` | `c/lock.c` | read/write the lock registers by name (`/lock_in+pid_square/lock`) |
 | `osc` | `c/osc.c` | read/write the scope registers by name, `dump` of both buffers (`/lock_in+pid_square/osc`) |
-| `streaming` | `c/streaming.c` | waits for `stream_cmd`, launches `stream_tcp_osc_cmd` (`/lock_in+pid_square/streaming`, through `stream_start.sh`) |
+| `streaming` | `c/streaming.c` | waits for `stream_cmd`, launches `stream_tcp_osc_cmd` (`/lock_in+pid_square/streaming`, through `stream_start.sh`). The offsets of `stream_*` come from `lock_offsets.h` (generated from `lock.txt`, as in lock_in+pid_harmonic2), not hardcoded |
 | `stream_tcp_osc_cmd` | `c/stream_tcp_osc_cmd.c` | reads the scope buffers continuously and sends them over TCP: `stream_tcp_osc_cmd <host> <port> <send_min_len>` |
 
 **From the development PC (cross compilation, since v2.3.10).** `c/Makefile` uses `$(CROSS_COMPILE)gcc`
@@ -251,18 +248,25 @@ Where to change things:
 | What | File |
 |---|---|
 | Lock module (registers, muxers, lock-in, outputs) | `prj/v0.94/rtl/lock.v` (bus decoder generated by `config_tool.py`) |
-| Submodules (PID, filters, generator, ramp, lock control) | `prj/v0.94/rtl/lock/*.v`; tables of the generator `lock/data_*_ss.dat` (`resources/code_helpers/gen_sin_cos.py`) |
+| Submodules (PID, filters, ramp, lock control) | `prj/v0.94/rtl/lock/*.v` |
+| Square generator and lock-in filter | `prj/v0.94/rtl/lock/gen_mod_sq.v`, `lock/LP_filter_sq.v` (the product, gains and saturation are in `lock.v`, "Signal Processing"). There are no ROM tables (`data_*.dat`) in this App: `red_pitaya_vivado_Z10.tcl` l. 124 |
 | Connections to ADC/DAC/scope/PWM/DIO | `prj/v0.94/rtl/red_pitaya_top.sv` |
 | Scope (decimation, `osc_ctrl_i`, bus read) | `rtl/rtl/classic/rp_scope_com.v`, `rp_scope_cfg.v`, `rp_decim.v` |
 | Constraints | `sdc/red_pitaya.xdc`, `prj/v0.94/sdc/` |
 
-Known: timing does not close, as in the 2015.2 design; the App works. v2.3.17: WNS −8.954 ns, TNS −9565 ns
-(v2.3.15: −10.035 / −8637); the worst paths are the long combinational paths of the loop (PID → scope
-muxes, outputs); the bus read of the lock module meets timing (+1.892 ns) with the 2-cycle multicycle constraint
-of `prj/v0.94/sdc/red_pitaya.xdc` l. 82-83 (CHANGELOG v2.3.17, `devAgent.md`). If you add a register to the read
-mux of `lock.v`, keep it a register of `adc_clk` held during `sys_ren` (as the `*_rd` copies), or the multicycle
-constraint is no longer valid ([FPGA.md](FPGA.md#lock-module-0x40600000)). Simulations of `lock_ctrl.v` and of
-the bus reads: see [test/](#simulations-and-tests-test).
+Known: timing does not close, as in lock_in+pid_harmonic; the App works (lock tests on the board). FPGA of v2.0.0
+(build 4, 2026-10-11 20:22): **WNS −9.308 ns, TNS −5095 ns (3409 endpoints)**, in the inherited paths (PID B → scope
+mux, PID → `lock_ctrl.signal_now`, ADC → DAC clock −9.144 ns); the worst value moves between builds with the
+placement (build 3: −8.217 ns). **All the internal paths of the square generator / lock-in have positive slack**
+(LPF +2.108 ns, ±1 product +3.176 ns, gain +3.409 ns; `get_timing_paths` on the routed checkpoint): to get there the
+input of each filter stage is registered, the variable shift of the filter is done in two registered steps, and the
+product and the gain are pipelined without reset (the reset net of `adc_clk` has a large fan-out). 111 critical
+warnings in the log, the same types as in lock_in+pid_harmonic (`devAgent.md` 2026-10-12 00:50,
+`build_logs/rp_lock-in_pid_sq_20261011_2022_v200c_fpga.log` in the Apps folder). The bus read of the lock module
+meets timing with the 2-cycle multicycle constraint of `prj/v0.94/sdc/red_pitaya.xdc` l. 82-83. If you add a register
+to the read mux of `lock.v`, keep it a register of `adc_clk` held during `sys_ren` (as the `*_rd` copies), or the
+multicycle constraint is no longer valid ([FPGA.md](FPGA.md#lock-module-0x40600000)). Simulations: see
+[test/](#simulations-and-tests-test).
 
 ## Web interface (`index.html`)
 
@@ -297,8 +301,12 @@ files to `name_YYYYMMDD_HHmmss.ext` backups. Hand-written blocks inside a dock (
 `lock_control` in `[FPGAUPDATE DOCK]`) are kept in the table of the tool; review the diff after running it.
 Updated for the v0.94 tree in v2.3.13; v2.3.15: `index=` of each register (for `TrgUnlock`, index 37 of the
 scope) and the ranges of `lock.txt`/`osc.txt`; v2.3.17: the generated read mux of `lock.v` uses the `*_rd` copies
-and loads `sys_rdata` only on reads. **The `html` output is out of date** (its `input_buttons` list is the one of
-v2.3.13): `index.html` has been edited by hand since v2.3.15, do not regenerate it (`devAgent.md`, 2026-10-09 12:14).
+and loads `sys_rdata` only on reads. v2.0.0 (this App): square registers, `lpf_*` encoding, UI lists (28 time
+constants, gains, `trig_sw` without "harmonic mod."), the block of the lock trigger registers and of the square
+generator registers of `src/lock.c` is generated (it was hand-written and would have been lost), the hand-written
+unit fields (`lock_lock_trig_time_val`, `lock_lock_trig_val`, `lock_gen_mod_sqp`, `lock_gen_mod_phase_sq`) and the
+lock control buttons are not regenerated, and the repository can have another name than the App folder. Review the
+`html` output before using it: parts of `index.html` are edited by hand (`devAgent.md` 2026-10-12 00:50).
 
 After adding or changing a register: run the tool, rebuild FPGA + controller + tools, and update
 [FPGA.md](FPGA.md).
@@ -318,31 +326,38 @@ After adding or changing a register: run the tool, rebuild FPGA + controller + t
 | `config_load_window_sim.js` | `node test/config_load_window_sim.js [--old]` | Config → load of the time window: conversion, and the real chunked send of `index.html` against a model of `rp_set_params()` (forceX handshake) plus a GET poll (v2.3.17) |
 | `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX |
 
+`minor_ui_sim.js` (`node test/minor_ui_sim.js`) checks small details of the page (labels of this App).
+
 Run them from `lock_in+pid_square/`. All exit with code 1 on failure. `--old` runs a check against the code of
-the previous version (it must fail). `lock_ctrl_tb.v` covers 32-bit time triggers ≥ 2³¹ since v2.3.15 (cases
-14-15). Results of v2.3.17 (`devAgent.md`, `build_logs/rp_lock-in_pid_h_20261009_2124_v2317c_sim.txt`):
-`lock_ctrl_sim` 35/35, `lock_bus_read_sim` PASS (0 unstable reads of 4000), `lock_ctrl_ui_sim` 28/28,
-`lock_capture_ui_sim` 63/63, `trig_input_units_sim` 38/38, `trig_from_graph_sim` 0 failures,
-`config_load_window_sim` 21/21; `auto_set_c_sim` 14/14 (v2.3.15).
+the previous version (it must fail). Results of v2.0.0 (`devAgent.md` 2026-10-12 00:50 and 01:25,
+`build_logs/rp_lock-in_pid_sq_20261012_0123_v200b6_sim.txt` in the Apps folder): `sq_lockin_sim` PASS (13
+configurations of the generator; sqX/sqY/sqF = expected correlation at 31.25 MHz, 20.8 MHz and 625 kHz; internal
+latency 2 ticks; first-order τ 1031 ticks vs 1024), `lock_bus_read_sim` PASS (new addresses), `lock_ctrl_sim` 35/35,
+`config_load_window_sim` 21/21, `lock_capture_ui_sim` 73/73, `lock_ctrl_ui_sim` 28/28, `minor_ui_sim` 7/7,
+`sq_modulation_ui_sim` 29/29, `trig_input_units_sim` 38/38, `trig_from_graph_sim` 0 failures, `auto_set_c_sim` 28/28
+(part 6: square registers, exact writes above 2²⁴ from outside).
 
 The Python client `control_finn.py` was tested by devAgent against a fake HTTP server of the board (Lua argument
 order, `c/lock`/`c/osc`, 2.0 scope with trigger lock, a model of the C worker, `/data` that only answers a body
-sent with the headers). Those scripts are not in the repository (devAgent scratchpad); the board tests are in
-`reportes/lock-in_pid_h.md`.
+sent with the headers): 57/57, 35/35, 9/9, 30/30, `example_usage.py` rc 0. Those scripts are not in the repository
+(devAgent scratchpad).
 
-On the board the reference test is the LOCK MODE procedure of `test_files/lock_test.md` (Apps root),
-with `dummy_simulator` on a second board; reports in `reportes/lock-in_pid_h_lock_test/`.
+On the board the reference test is the LOCK MODE procedure of `test_files/lock_test.md` (Apps folder) with
+`test_files/lock_in+pid_square__lock_mode.json` and `dummy_simulator` on a second board; reports in
+`reportes/lock-in_pid_sq.md` and `reportes/lock-in_pid_sq_lock_test/`. **Pending: a lock at 31.25 MHz** (needs
+the input low-pass filter of `dummy_simulator` turned off, `dummy_lpf_on` = 0, on the other board).
 
 ## Installing on the board
 
 From a package (`archive/*.tar.gz` or `.zip`, or a GitHub release):
 
 ```bash
-tar -xzf lock_in+pid_square-2.3.17-<build>-devbuild.tar.gz
+tar -xzf lock_in+pid_square-2.0.0-<build>-devbuild.tar.gz
 ./upload_app.sh rp-XXXXXX.local          # -p <ssh port>; -w uploads only index.html, js, css
 ```
 
-`upload_app.sh` installs an SSH key if needed, makes the file system writable (`/boot/sbin/rw`), replaces
+`upload_app.sh` installs an SSH key if needed, makes the file system writable (`/opt/redpitaya/sbin/rw` with
+`PATH_REDPITAYA` on 2.0, `/boot/sbin/rw` on 0.9x; l. 117-119, since v2.3.18), replaces
 `/opt/redpitaya/www/apps/lock_in+pid_square/` and copies the App. By hand: copy the folder
 `lock_in+pid_square/` of the package (not the source folder) to `/opt/redpitaya/www/apps/` with the
 file system in read-write mode, keeping `fpga.sh` executable (755).
@@ -355,8 +370,10 @@ reloads the FPGA.
 Notes for Ecosystem 2.0 (`testAgent.md`):
 
 - In a non-interactive SSH, `rw` needs `PATH_REDPITAYA`: `export PATH_REDPITAYA=/opt/redpitaya; /opt/redpitaya/sbin/rw`.
-  The `upload*` targets of the Makefile do so since v2.3.15. `upload_app.sh` still calls `/boot/sbin/rw`
-  (l. 119, 125); whether that path exists on OS 2.04 is **a confirmar**.
+  The `upload*` targets of the Makefile and `upload_app.sh` do so.
+- The App was installed on RP2 by copying `target/lock_in+pid_square/` (36 files) and restarting nginx (the
+  `nginx.conf` of this App is new): `systemctl restart redpitaya_nginx`, then `bazaar?start=lock_in+pid_square`
+  (`reportes/lock-in_pid_sq.md` step 1). `upload_app.sh` was not run with this App (a confirmar).
 - Each `POST /data` (page, `curl`, `control_finn.py`) leaves an open connection in the nginx of the board; after
   long test sessions restart it with `systemctl restart redpitaya_nginx` (then start the App again)
   ([Remote.md](Remote.md#known-issue-of-the-ecosystem-post-data-leaves-connections-open)).
@@ -365,9 +382,15 @@ Notes for Ecosystem 2.0 (`testAgent.md`):
 
 ## Versioning and packages
 
-- Version: `lock_in+pid_square/info/info.json` (`"version": "2.3.17-BUILD_NUMBER"`), the title of
-  `index.html` (`Harmonic lock-in+PID (v2.3.17)`), `CHANGELOG.md`, `README.md` ("Current version"). Build number: `_build_number`.
-  Revision: `REVISION` (default `devbuild`).
-- Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`.
-- Branches: `master` = 0.3.x (FPGA Vivado 2015.2), `devel2.0` = 2.3.x (FPGA Vivado 2020.1, Ecosystem 2.0).
-  Tags `v2.3.11` .. `v2.3.17` on `devel2.0`.
+- Version: `lock_in+pid_square/info/info.json` (`"version": "2.0.0-BUILD_NUMBER"`, name "Square Lock-in+PID"), the
+  title of `index.html` (`Square lock-in+PID (v2.0.0)`), `CHANGELOG.md`, `README.md` ("Current version"). Build
+  number: `_build_number` (6 for the last build, `2.0.0-6-devbuild`). Revision: `REVISION` (default `devbuild`).
+- Numbering: the major 2 is the Ecosystem 2.0 version, as lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x and
+  lock_in+pid_harmonic2 2.4.x; minor and patch start again because this is a new App. There is no version for the
+  0.9x / 1.0 ecosystems.
+- Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`
+  (`lock_in+pid_square-2.0.0-6-devbuild.*`).
+- Branches: only `devel2.0` (Vivado 2020.1, Ecosystem 2.0). Tag `v2.0.0` (commit `9e7b4a9`); the tags `v2.3.x`
+  come with the history of lock_in+pid_harmonic.
+- GitHub repository `marceluda/rp_lock-in_pid_sq`: to be created (the URL is already in `CITATION.cff`).
+- Icon: `info/icon.png` is still the one of lock_in+pid_harmonic (provisional; a new one will be provided).

@@ -1,17 +1,9 @@
 # Using the App from the web interface
 
-How to use `lock_in+pid_square` **v2.0.0** from the browser, panel by panel, and the usual procedures:
-scan, see a peak, get an error signal with the lock-in, close a lock and check it. Technical data of each
-instrument is in [App.md](App.md); registers in [FPGA.md](FPGA.md).
-
-> **Square Lock-in+PID v2.0.0.** This page comes from `lock_in+pid_harmonic` v2.3.18, from which this App
-> derives. Everything here applies, except the parts about the **modulation generator and the lock-in**:
-> in this App they are the square generator (`gen_mod_sqp`, `gen_mod_phase_sq`; `sq_ref`, `sq_quad`, `sq_phas`)
-> and the square lock-in (sqX, sqY, sqF; `lpf_sq`, `lpf_sqF`, `sg_amp_sq`, `sg_amp_sqF`) described in
-> [App.md](App.md#square-modulation-generator) and [FPGA.md](FPGA.md#lock-in-amplifier). Names such as
-> `cos_ref`/`sin_ref`/`cos_1f..3f`, X/Y/F1..F3, `gen_mod_hp`, `lpf_F0..3`, `sg_amp0..3` or "Harmonic lock-in"
-> correspond to those; register offsets from `0x054` on are the ones of [FPGA.md](FPGA.md); the screenshots are
-> of the harmonic App.
+How to use `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.0** from the browser, panel by panel, and the usual
+procedures: scan, see a peak, get an error signal with the square lock-in, close a lock and check it. Technical data
+of each instrument is in [App.md](App.md); registers in [FPGA.md](FPGA.md); how the page talks to the board in
+[Structure.md](Structure.md).
 
 - [Opening the App](#opening-the-app)
 - [Layout of the page](#layout-of-the-page)
@@ -23,39 +15,47 @@ instrument is in [App.md](App.md); registers in [FPGA.md](FPGA.md).
 - [Typing values with units](#typing-values-with-units)
 - [Procedures](#procedures)
   1. [Scan and see the response of the system](#1-scan-and-see-the-response-of-the-system)
-  2. [Configure the lock-in to get an error signal](#2-configure-the-lock-in-to-get-an-error-signal)
+  2. [Configure the square lock-in to get an error signal](#2-configure-the-square-lock-in-to-get-an-error-signal)
   3. [Close the lock (Trigger Lock / Lock Now)](#3-close-the-lock)
   4. [Check the lock and release it](#4-check-the-lock-and-release-it)
+  5. [Working at 31.25 MHz](#5-working-at-3125-mhz)
 - [Saving and loading configurations](#saving-and-loading-configurations)
 - [Saving data](#saving-data)
 - [Several clients and Restart](#several-clients-and-restart)
 - [Known limitations of the interface](#known-limitations-of-the-interface)
 
-The screenshots were taken on RP2 (RedPitaya_OS 2.04-35) with v2.3.14 to v2.3.17 (the version is said when it
-matters), during the lock tests of `reportes/lock-in_pid_h_lock_test/` and `reportes/lock-in_pid_h.md` (a
-simulated peak made by `dummy_simulator` on a second board) and while writing this page.
+**Screenshots.** The ones named `sq_*` were taken with this App (2.0.0-5 and 2.0.0-6) on RP2 (RedPitaya_OS 2.04-35)
+during the board tests of 2026-10-12 (`reportes/lock-in_pid_sq.md` and `reportes/lock-in_pid_sq_lock_test/` in the
+Apps folder), with a simulated peak made by `dummy_simulator` on a second board. The panels that this App inherits
+unchanged from `lock_in+pid_harmonic` (ramp, PIDs, lock control, config, restart) are shown with screenshots of that
+App (v2.3.14–2.3.17): the title of the page and the names of the lock-in signals in the selectors are different
+(`Xo`/`Yo` there, `sqXo`/`sqYo` here), the rest is identical. Each caption says which App it is.
 
 ## Opening the App
 
 Install the App (see the [README](../README.md#installation)) and open
-`http://rp-XXXXXX.local/lock_in+pid_square/` (or choose it in the main menu of the Red Pitaya). The page
-starts the App (loads the FPGA and the C controller) and restores the state of the previous session of the
+`http://rp-XXXXXX.local/lock_in+pid_square/` (or choose *Square Lock-in+PID* in the main menu of the Red Pitaya).
+The page starts the App (loads the FPGA and the C controller) and restores the state of the previous session of the
 same browser tab. Use a single tab per board (see [Several clients and Restart](#several-clients-and-restart)).
 
-## Layout of the page
+After loading, the FPGA has its reset values: square generator at **31.25 MHz** (`gen_mod_sqp` = 1), modulation off on
+both outputs (`mod_out1` = `mod_out2` = −1), OUT1 = OUT2 = 0, lock-in filters 8 µs 2nd order, gains ×1, ramp off
+(defaults checked on the board, `reportes/lock-in_pid_sq.md` step 1).
 
-![Scan of a peak, Normal trigger on Scan floor](.Usage/scan_mode_peak_normal_scan_floor.jpg)
+![The page just loaded (Square Lock-in+PID 2.0.0)](.Usage/sq_page_loaded_defaults.jpg)
+
+## Layout of the page
 
 - **Top toolbar**: zoom and acquisition buttons.
 - **Left column**: the instruments (Oscilloscope, Outputs, Lock-in modules, Ramp Controller, PIDs modules,
   Lock Control, Streaming). Each title opens or closes its panel.
 - **Centre**: the plot (two Y axes, Channel 1 blue and Channel 2 red), the mouse position, and the
-  *Harmonic Lock-in* display (X, Y, R, φ, F1, F2, F3).
+  **Square Lock-in** display (sqX, sqY, R, φ, sqF), opened with its title.
 - **Right column**: the original scope controls (Trigger, Range, Measure, Gain settings) and the Monitor.
 
 Every change is sent to the board when the field loses focus or Enter is pressed (Escape cancels the edit).
 Only changed values are sent. A field left empty (e.g. after Backspace) or with an invalid text is **not** sent:
-the last value comes back (up to v2.3.15 an emptied field sent 0).
+the last value comes back.
 
 ## Panels
 
@@ -69,50 +69,73 @@ the last value comes back (up to v2.3.15 an emptied field sent 0).
 | Stop | Stops the acquisition. |
 | Save Data | Plot data as Python/Numpy, Matlab/Octave or CSV ([Saving data](#saving-data)). |
 | Config | Save / load configurations ([below](#saving-and-loading-configurations)). |
-| Raw Mode | Values in counts (`int`) instead of volts. |
+| Raw Mode | Values in counts (`int`) instead of volts (also in the Square Lock-in display). |
 | Averaging | Average inside the decimation. |
-| **AUTO** | Auto-set of the scope in the controller (time range, trigger, Y range). Ends a lock capture. Not the same as *Autoscale*. |
+| **AUTO** | Auto-set of the scope in the controller (time range, trigger, Y range). Ends a lock capture. Not the same as *Autoscale*. The minimum window it chooses is 1 µs. |
 
 ### Oscilloscope
 
-![Oscilloscope panel](.Usage/panel_oscilloscope_scan.jpg)
+![Oscilloscope panel (lock_in+pid_harmonic v2.3.14, same panel)](.Usage/panel_oscilloscope_scan.jpg)
 
-- **OscA / OscB**: signal shown on Channel 1 / Channel 2 (any of 25 internal signals:
-  in1, in2, error, ctrl_A, ctrl_B, Ramp A/B, PID inputs/outputs, references, Xo, Yo, F1o..F3o, signal_i,
-  out1, out2). The fast inputs are seen with `in1`/`in2`.
+- **OscA / OscB**: signal shown on Channel 1 / Channel 2, any of 21 internal signals: 0, in1, in2, error, ctrl_A,
+  ctrl_B, Ramp A, Ramp B, pidA_in, pidB_in, PID A out, PID B out, **sq_ref, sq_quad, sq_phas, sqXo, sqYo, sqFo**,
+  signal_i, out1, out2 ([values](FPGA.md#oscilloscope-channels-osca_sw-oscb_sw)). The fast inputs are seen with
+  `in1`/`in2`; the references are ±4096 counts (±0.5 V on the plot).
 - **Ext Trig**: event used when the scope trigger *Source* is *External*: None, Pin (DIO0_P), Scan floor,
-  Scan ceil, harmonic mod. (start of each modulation period), Out of lock, Jump trigger, Lock control trig
-  (the lock event; used by Capture Lock). *Square mod.* is not implemented.
+  Scan ceil, **Square mod.** (one pulse per period of the square generator, at the rising edge of `sq_ref`), Out of
+  lock, Jump trigger, Lock control trig (the lock event; used by Capture Lock). With *Square mod.* the edge of
+  `sq_ref` falls on the same sample in every acquisition (8/8 on the board at 50 kHz and 31.25 MHz).
 - **More options**: *R|Phase Mode* (disabled in this version) and *Disable anti-aliasing filter* for each
   channel.
 
-![More options](.Usage/panel_oscilloscope_more_options.jpg)
+![More options (lock_in+pid_harmonic, same panel)](.Usage/panel_oscilloscope_more_options.jpg)
 
 ### Outputs
 
-![Outputs and Streaming panels (v2.3.10)](.Usage/panel_outputs_streaming.jpg)
+- **Out1 / Out2**: signal sent to each fast output (±1 V): 0, in1, in2, in1−in2, error, sq_ref, sq_quad, sq_phas,
+  sqXo, sqYo, PID A out, PID B out, ctrl_A, ctrl_B, aux_A, aux_B. For a lock, Out1 = ctrl_A (ramp + PID A) is the
+  usual choice; the square modulation is **added** to it with *A Out1* ([Lock-in modules → Auxiliar](#lock-in-modules)).
+- **Slow outputs**: four selectors. **They have no effect in this version** (the slow outputs are not driven by
+  the FPGA, see [App.md](App.md#inputs-and-outputs)); their option lists still show the names of the harmonic App
+  (`sin_ref`, `cos_1f`...).
 
-- **Out1 / Out2**: signal sent to each fast output (±1 V): 0, in1, in2, in1−in2, error, cos_1f, cos_2f,
-  cos_3f, cos_ref, sin_ref, PID A out, PID B out, ctrl_A, ctrl_B, aux_A, aux_B. For a lock, Out1 = ctrl_A
-  (ramp + PID A) is the usual choice.
-- **Slow outputs**: four selectors. **They have no effect in this version** (the slow outputs are not
-  driven by the FPGA, see [App.md](App.md#inputs-and-outputs)).
+(No screenshot of this panel with this App yet; it is the panel of lock_in+pid_harmonic with the option list
+above.)
 
 ### Lock-in modules
 
-![Lock-in modules panel](.Usage/panel_lockin_modules.jpg)
+![Lock-in modules: Square oscillator at 50 kHz (Half period 1249), Phase 625 = 90°, sqX & sqY filter 262 µs, ×16 (Square Lock-in+PID 2.0.0)](.Usage/sq_panel_square_lockin_50k.jpg)
 
-- **Lock-in input**: signal to demodulate (in1, in2, in1−in2, cos_ref, sin_ref, cos_1f, aux_A, Ramp A).
-- **Harmonic oscillator**: *Period* (`gen_mod_hp`, shows τ and f below: 0 → 49.603 kHz) and *Phase* of the
-  F1/F2/F3 references (0..2519 = 0..360°).
-- **Demodulation**: tabs *X & Y*, *F1*, *F2*, *F3*, each with its low-pass filter (*cut* = τ | f, *order*
-  OFF/1/2) and *Amplification* (×2ⁿ).
-- **Auxiliar**: *Aux A*, *Aux B* constants, and **Modulation Amplitude** *A Out1* / *A Out2*: amplitude of
-  the reference added to OUT1 (`cos_ref`) / OUT2 (`sin_ref`); −1 = off, 0..8191 (≈ value/16384 V).
+- **Lock-in input** (`signal_sw`): signal to demodulate: in1, in2, in1−in2, sq_ref, sq_quad, sq_phas, aux_A, Ramp A.
+  `sq_ref`/`sq_quad` as input are useful to check the lock-in without external signal (sqX of `sq_ref` = 4096 ×
+  gain).
+- **Square lock-in** (opened with its title):
+  - **Square oscillator**:
+    - **Half period** (`gen_mod_sqp`, half period − 1 in ticks of 8 ns): f = 125 MHz / (2·(value + 1)).
+      Accepts a number, a frequency (`50 kHz`, `31.25 MHz`) or a period (`20 us`) ([units](#typing-values-with-units)).
+      Below it the page shows **f**, **T**, the ticks per period and the **quadrature angle**: 90° when the value is
+      odd; with an even value it shows the real angle in orange, e.g. "quadrature: 60.0° (use an odd value for 90°)"
+      for 2, and "none (62.5 MHz)" for 0. The mouse wheel changes it by one and updates the text.
+    - **Phase** (`gen_mod_phase_sq`): delay of `sq_phas` (and of the sqF demodulation) with respect to `sq_ref`, in
+      ticks, or an angle (`90 deg`, `0.5 pi`, `1.57 rad`) or a delay (`5 us`). Below: degrees, fraction of π and
+      "n of P ticks"; values ≥ P are marked "limited to P-1" (the FPGA uses P−1). At 31.25 MHz there are only 4
+      ticks per period: 0, 90°, 180°, 270°.
+  - **Demodulation**, two tabs:
+    - **sqX & sqY**: low-pass filter shared by sqX (from `sq_ref`) and sqY (from `sq_quad`): *cut* = τ | f (28
+      values, 64 ns | 2.5 MHz … 9 s | 18.5 mHz) and *order* (OFF, 1, 2); **Amplification** ×1 … ×32k of sqXo and sqYo.
+    - **sqF**: the same for sqF (from `sq_phas`).
+- **Auxiliar** (opened with its title): *Aux A*, *Aux B* constants (−8192..8191), and **Square Modulation
+  Amplitude**: *A Out1* adds ±A/2 with `sq_ref` to OUT1, *A Out2* adds ±A/2 with `sq_quad` to OUT2; −1 = off,
+  0..8191 (A = 8191: ±0.5 V). A = 100 adds ±50 counts (±6.1 mV).
+
+With OscA = `sq_ref` and OscB = `sq_phas` (Phase = 626 ticks at 50 kHz) the delay between the two references is
+seen directly:
+
+![sq_ref and sq_phas at 50 kHz, 5 µs apart (Square Lock-in+PID 2.0.0)](.Usage/sq_sqref_sqquad_50k_phase90.jpg)
 
 ### Ramp Controller
 
-![Ramp Controller panel](.Usage/panel_ramp_controller.jpg)
+![Ramp Controller panel (lock_in+pid_harmonic, same panel)](.Usage/panel_ramp_controller.jpg)
 
 - **Ramp period** (`ramp_step`: ticks per step − 1; below, the resulting period τ and frequency f),
   **Ramp hig lim**, **Ramp low lim** (in counts, with the value in mV below), **Ramp B factor**
@@ -120,28 +143,28 @@ the last value comes back (up to v2.3.15 an emptied field sent 0).
 - **Scan reset** (hold at 0), **Scan enable** (the ramp runs; the *Scan enable* button of Lock Control
   must also be on), **Scan direction**, **Sawtooth** (otherwise triangle).
 
-In the screenshot: ±5000 counts (±610 mV), period 200000, sawtooth → 16.0 s.
+In the screenshot: ±5000 counts (±610 mV), period 200000, sawtooth → 16.0 s. The test configuration of this App uses
+±5000, period 400, triangle → 64.16 ms.
 
 ### PIDs modules
 
-![PIDs modules panel](.Usage/panel_pids_error_selector.jpg)
+![PIDs modules panel (lock_in+pid_harmonic: "Yo" there is "sqYo" here)](.Usage/panel_pids_error_selector.jpg)
 
-- **Error signal selector**: *Error signal* (0, Xo, Yo, F1o, F2o, F3o, in1, in1−in2) and its *offset*.
-- **PID A / PID B**: *input* (error by default), *reset integral*, *freeze out*, *freeze integral*, and
-  the gains *kp*, *ki*, *kd* with the effective value written below (kp as a factor, ki and kd as τ and f).
+- **Error signal selector**: *Error signal* (0, sqXo, sqYo, sqFo, signal_i, in2, in1, in1−in2) and its *offset*
+  (subtracted).
+- **PID A / PID B**: *input* (error, sqXo, sqYo, sqFo, signal_i, Ramp A, in1−in2, in1, in2, aux_A, aux_B, sq_ref,
+  sq_quad, sq_phas), *reset integral*, *freeze out*, *freeze integral*, and the gains *kp*, *ki*, *kd* with the
+  effective value written below (kp as a factor, ki and kd as τ and f).
 - **More Options** shows the set point *sp*, the scale selectors of kp (/1../4096), ki (8 ns..9 s) and kd
-  (7.5 ns..491.5 µs), and *SAT lim* (saturation of the integral term, ±122 µV..±1 V). The ki option 4 is
-  labelled "65 us" since v2.3.15 (2¹³ · 8 ns = 65.5 µs; it said "6 us"):
+  (7.5 ns..491.5 µs), and *SAT lim* (saturation of the integral term, ±122 µV..±1 V).
 
-![PID A with ki scale 65 us (v2.3.15)](.Usage/panel_pidA_isr_65us.jpg)
-
-![PID A with More Options](.Usage/panel_pidA_more_options.jpg)
+![PID A with More Options (lock_in+pid_harmonic, same panel)](.Usage/panel_pidA_more_options.jpg)
 
 In the example kp = −500 with /1024 gives −0.488, and ki = −20 with 537 ms gives τ = 26.8 ms.
 
 ### Lock Control
 
-![Lock Control panel](.Usage/panel_lock_control.jpg)
+![Lock Control panel (lock_in+pid_harmonic, same panel)](.Usage/panel_lock_control.jpg)
 
 The main part of the panel (from top to bottom):
 
@@ -157,195 +180,225 @@ The main part of the panel (from top to bottom):
   the plot sets the trigger value and fires *Trigger Lock*. Design: [`lock_capture.md`](../lock_in+pid_square/doc/lock_capture.md).
 - **config** (open it with its title):
 
-![Lock Control config](.Usage/panel_lock_control_config.jpg)
+![Lock Control config (lock_in+pid_harmonic, same panel)](.Usage/panel_lock_control_config.jpg)
 
   - *Scan enable*, *PID A enable*, *PID B enable*: what is on **while LOCKED** (usually: scan off, PID A on).
   - *Trigger type*: OFF (only Lock Now), Time trigger, Level Trigger, Level+time Trigger.
-  - *Time trigger*: delay after the scan floor, in ticks of 8 ns or with units (`16.58 ms`, `20 s`; see
-    [below](#typing-values-with-units)); shown as T below (2072622 = 16.58 ms). 0 = OFF, up to 4294967295 =
-    34.36 s (32 bits since v2.3.15; it was limited to 17.18 s).
-  - *Signal for trigger*, *Level trigger* (counts or `V`/`mV`, shown in mV below), *trig upward?*: for the level trigger.
+  - *Time trigger*: delay after the scan floor, in ticks of 8 ns or with units (`16.58 ms`, `20 s`); shown as T
+    below. 0 = OFF, up to 4294967295 = 34.36 s.
+  - *Signal for trigger* (error, sqXo, sqYo, sqFo, signal_i, Ramp A, aux_A, in1, in2, in1−in2, PID A out, PID B out,
+    ctrl_A, ctrl_B, Ramp B, aux_B), *Level trigger* (counts or `V`/`mV`, shown in mV below), *trig upward?*.
   - **Choose from graph**: the next click on the plot sets the time (and/or level) of the trigger. A second
     click on the button (*Cancel*) or Esc cancels it. A red warning appears if the scope is not in
-    Normal/Single + External + Scan floor (the only setup where t = 0 of the plot is the scan floor).
+    Normal/Single + External + Scan floor (the only setup where t = 0 of the plot is the scan floor):
+
+![Choose from graph warning (lock_in+pid_harmonic)](.Usage/choose_from_graph_warning.jpg)
 
 - **Re-lock system** and **Step Responce Measurement** (open them with their titles):
 
-![Re-lock, step response and Monitor](.Usage/panel_relock_monitor.jpg)
+![Re-lock, step response and Monitor (lock_in+pid_harmonic: the re-lock signals sqXo/sqYo/sqFo are Xo/Yo/F1o there)](.Usage/panel_relock_monitor.jpg)
 
-  - Re-lock: *Error Enable* with `|error| >` threshold, *Signal Enable* with a signal `<` threshold,
-    *RL reset*. Not tested on this version (see [App.md](App.md#re-lock-and-step-response)).
+  - Re-lock: *Error Enable* with `|error| >` threshold, *Signal Enable* with a signal (in1, in2, in1−in2, aux_A,
+    aux_B, sqXo, sqYo, sqFo) `<` threshold, *RL reset*. Not tested on this version (see
+    [App.md](App.md#re-lock-and-step-response)).
   - Step response: *Jump ctrl_A*, *Jump ctrl_B*, *Freeze during step* (A/B out, A/B int), *Start Step Responce*.
 
-How the lock control works inside: [`lock_control.md`](../lock_in+pid_square/doc/lock_control.md).
+How the lock control works inside: [`lock_control.md`](../lock_in+pid_square/doc/lock_control.md) and
+[Structure.md](Structure.md#lock-control).
 
 ### Streaming
 
-See the Outputs screenshot above.
-
 - **IP** (the *IP* button fills in the address of the computer running the browser), **Port** (6000 for
   the server of `resources/streaming`), **Streaming Rate** (1.95 MS/s .. 1.9 kS/s; 0.98 MS/s is the fastest
-  continuous rate).
-- **Prepare Streaming** starts `c/streaming` on the board; **Start** / **Stop** send the data.
+  continuous rate: 976 kS/s with overrun 0 on the board with this App).
+- **Prepare Streaming** starts `c/streaming` on the board; **Start** / **Stop** send the data of the two scope
+  channels (OscA, OscB).
 - Start the receiver on the computer first (`resources/streaming/server`, or `nc -l <port>`); details in
   `resources/README.md`.
 
-### Right panels and displays
+![Outputs and Streaming panels (lock_in+pid_harmonic v2.3.10; same Streaming panel)](.Usage/panel_outputs_streaming.jpg)
 
-![Harmonic Lock-in display and Monitor](.Usage/panel_harmonic_lockin_display.jpg)
+### Right panels and displays
 
 - **Trigger**: *Source* (Channel 1, Channel 2, External), *Mode* (Auto, Normal, Single), *Edge*, *Level*,
   and the *Single* button. External uses the *Ext Trig* of the Oscilloscope panel.
-- **Range**: buttons for the X and Y scales and offsets.
+- **Range**: buttons for the X and Y scales and offsets (X+ up to 68.7 s).
 - **Measure**: min, max, amplitude, average, frequency and period of each channel.
 - **Gain settings**: probe attenuation (1x/10x) and LV/HV jumper setting of each input (scale of the display).
-- **Harmonic Lock-in** (below the plot): X, Y, R, φ, F1, F2, F3 in volts.
+- **Square Lock-in** (below the plot, opened with its title): **sqX**, **sqY**, **R** = √(sqX² + sqY²),
+  **φ** = atan2(sqY, sqX) and **sqF**, with bars. They are computed from the 28-bit registers **before the
+  amplification** (`sq?_28 / 2^13` counts, shown in V with 8192 counts = 1 V; in Raw mode in counts): a square input
+  of amplitude A in phase with `sq_ref` reads A; a sine of amplitude A reads (2/π)·A·cos φ. The values of sqXo /
+  sqYo / sqFo seen on the scope are these multiplied by the *Amplification*.
 - **Monitor**: mean and standard deviation of the error over ~1 s, in counts.
+
+(The Square Lock-in display opened has no screenshot yet.)
 
 ## Typing values with units
 
-Since v2.3.16 the **Time trigger** and **Level trigger** fields of *Lock Control → config* are text fields that
-accept a number with a unit (`index.html` l. 2217-2258, `parseTrigTime()`, `parseTrigLevel()`):
+Four fields are text fields that accept a number with a unit (decimal point or comma, optional space, units not
+case sensitive). The value is converted and sent when the edit ends (Enter or leaving the field); then the field is
+rewritten in register units and the text below it is updated. Escape restores the previous value. An empty or
+invalid text (`abc`) is not sent: a red hint appears and the last value comes back. The mouse wheel changes the value
+by one tick / count.
 
-| Field | Without unit | Units | Range | Examples |
-|---|---|---|---|---|
-| Time trigger | ticks of 8 ns | `s` (`seg`), `ms`, `us` (`µs`), `ns`, `tick(s)` | 0 .. 4294967295 (34.36 s); larger values are clamped; a nonzero time below one tick is 1 tick | `16.58 ms` → 2072500, `20 s` → 2500000000, `16,58ms` → 2072500 |
-| Level trigger | counts | `V`, `mV`, `count(s)` | −8192 .. 8191 (clamped) | `0.1 V` → 819, `-50 mV` → −410 |
+| Field | Without unit | Units | Examples (checked on the board, 2.0.0-5) |
+|---|---|---|---|
+| Lock Control → Time trigger | ticks of 8 ns | `s` (`seg`), `ms`, `us` (`µs`), `ns`, `tick(s)`; 0 .. 4294967295 (34.36 s), clamped | `16.58 ms` → 2072500, `40 s` → 4294967295 |
+| Lock Control → Level trigger | counts | `V`, `mV`, `count(s)`; −8192 .. 8191, clamped | `120 mV` → 983, `abc` → not sent |
+| Square oscillator → Half period | `gen_mod_sqp` | a frequency `Hz`, `kHz`, `MHz` (nearest possible value) or a period `s`, `ms`, `us`, `ns` | `31.25 MHz` → 1, `50 kHz` → 1249, `20 us` → 1249 |
+| Square oscillator → Phase | ticks | `deg` (`°`), `rad`, `pi` (`π`): fraction of the current period; or a delay `s`, `ms`, `us`, `ns` | `90 deg` → 625 at 50 kHz, `0.5 pi` → 625 |
 
-- Decimal point or comma; the space between number and unit is optional; units are not case sensitive.
-- The value is sent when the edit ends (Enter or leaving the field); then the field is rewritten in ticks /
-  counts and T / V_trg below it are updated. Escape restores the previous value.
-- An empty or invalid text (`abc`, `-5 ms`) is not sent: a red hint appears below the field and the last value
-  comes back. The mouse wheel changes the value by one tick / count.
-- Values above 2²⁴ ticks (134 ms) go through the float parameters of the C controller and are rounded to a
-  multiple of 2 to 256 ticks (e.g. `19 s` = 2375000000 is written as 2375000064, 0.5 µs more); see
-  [FPGA.md](FPGA.md#lock-control-auto-lock).
+Sources: `index.html` `parseTrigTime()`, `parseTrigLevel()` (l. 2200-2214), `parseSqPeriod()`, `parseSqPhase()`,
+`lock_modulation_update()` (l. 2228-2324); tests `test/trig_input_units_sim.js`, `test/sq_modulation_ui_sim.js`.
 
-Tested on the board (v2.3.16): `20 s`, a pasted `19 s`, `16.58 ms`, `16,58ms`, empty / `abc` / `-5 ms` (nothing
-sent), `0` (OFF), `40 s` (→ 4294967295), wheel, Escape; `0.1 V`, `-50 mV`, empty (`reportes/lock-in_pid_h.md`).
+- The frequency typed is converted to the nearest **integer** half period, without forcing it odd: `1 MHz` gives
+  `gen_mod_sqp` = 62 (992.1 kHz, quadrature 88.6°, with the warning); type 61 for 90° (1.008 MHz). The Python
+  helper `set_freq_hz()` picks the nearest odd value by itself ([Remote.md](Remote.md#lock-in-pid-ramp-and-lock-helpers)).
+- The angle of the Phase is converted with the period in the Half period field at that moment: change the period
+  first, then the phase.
+- Values above 2²⁴ (Time trigger above 134 ms, Half period above 16777216 i.e. below ~3.7 Hz) go through the float
+  parameters of the C controller: written from the page they are rounded to the float32 grid; written from Python
+  through `/lock` they are exact and kept (the page shows the rounded echo, but does not rewrite the register unless
+  that field is changed in the page). Above 2²⁴ the parity of the half period cannot be seen from the page, so no
+  quadrature warning is shown (error < 10⁻⁶ degrees).
 
-![Time trigger typed as "20 s"](.Usage/time_trigger_units_20s.png) ![Time trigger "40 s", clamped to 34.36 s](.Usage/time_trigger_max_34s.png)
+![Time trigger typed as "20 s" (lock_in+pid_harmonic)](.Usage/time_trigger_units_20s.png) ![Time trigger "40 s", clamped to 34.36 s (lock_in+pid_harmonic)](.Usage/time_trigger_max_34s.png)
 
-Other fields still have older unit conversions in the JavaScript (`index.html` l. 1790-2265), but they are
-`<input type="number">` fields, where browsers do not let letters be typed: **a confirmar** whether they can be
-used from the UI. Those conversions are:
-
-| Field | Units |
-|---|---|
-| Ramp hig/low lim, PID sp | `V`, `mV` (converted to counts) |
-| Ramp period | `s`, `ms` (see the limitation below) |
-| Period of the harmonic oscillator | `s`, `ms`, `us` |
-| Phase | `deg`, `rad`, `pi` |
+The other numeric fields (`<input type="number">`) only accept numbers. The JavaScript still has conversions for
+`V`/`mV` in Ramp limits and PID sp and `s`/`ms` in Ramp period, but the browser does not let letters be typed there
+(**a confirmar**).
 
 ## Procedures
 
-These procedures follow `test_files/lock_test.md`, the procedure used to test every version on the board.
-The example numbers are those of the test configurations `test_files/lock_in+pid_square__scan_mode.json`
-and `__lock_mode.json`: a system with a resonance (a peak) whose control input is OUT1 and whose response is
-measured on IN1.
+These procedures follow `test_files/lock_test.md` (Apps folder), the procedure used to test every version on the
+board, with the configuration of this App `test_files/lock_in+pid_square__lock_mode.json`: a system with a resonance
+(a peak) whose control input is OUT1 and whose response is measured on IN1. All the numbers below come from that
+configuration and from the test of 2026-10-12 ([lock test report](../../reportes/lock-in_pid_sq_lock_test/2026-10-12_01:00:00_lock.md),
+in the Apps folder).
 
 ### 1. Scan and see the response of the system
 
 1. **Outputs**: Out1 = `ctrl_A`.
 2. **Ramp Controller**: limits ±5000 (±610 mV), period 400 (triangle: 64.16 ms), *Scan enable* checked.
 3. **Lock Control**: *Scan enable* button on, *PID A enable* off.
-4. **Oscilloscope**: OscA = `Ramp A` (or `ctrl_A`), OscB = `in1`; Ext Trig = *Scan floor*.
-5. **Trigger**: Source *External*, Mode *Normal*. Zoom to one period of the ramp (0..64 ms): t = 0 is the
-   scan floor.
+4. **Oscilloscope**: OscA = `ctrl_A` (or `Ramp A`), OscB = `in1`; Ext Trig = *Scan floor*.
+5. **Trigger**: Source *External*, Mode *Normal*. Zoom to the rising half of the ramp (0..33 ms): t = 0 is the scan
+   floor.
 
-The response of the system (the peak) appears on Channel 2 at the same position in every sweep.
+The response of the system (the peak) appears on Channel 2 at the same position in every sweep (16.25 ms after the
+scan floor in the test, ctrl_A ≈ +70 counts).
 
-### 2. Configure the lock-in to get an error signal
+### 2. Configure the square lock-in to get an error signal
 
-The lock-in, with a small modulation added to the control signal, gives a signal proportional to the
-derivative of the response with respect to the scan: it crosses zero at the maximum of the peak, which is
-the error signal for the PID.
+The lock-in, with a small square modulation added to the control signal, gives a signal proportional to the
+derivative of the response with respect to the scan: it crosses zero at the maximum of the peak, which is the error
+signal for the PID.
 
-1. **Lock-in modules**: Lock-in input = `in1`; Period = 0 (49.6 kHz); *A Out1* = 100 (modulation of ≈ 6 mV
-   added to OUT1); X & Y filter 262 µs | 607 Hz, order 2; Amplification ×32.
-2. Look at `Xo` and `Yo` (OscA/OscB) during the scan: change the *Phase* of the references or choose the
-   component (X or Y) that gives a clean dispersive curve with a zero crossing at the peak.
-3. **PIDs modules**: Error signal = that component (`Yo` in the test configuration), offset 0.
-4. OscA = `ctrl_A`, OscB = `error`:
-
-![Scan: ctrl_A and error](.Usage/scan_mode_peak_normal_scan_floor.jpg)
+1. **Lock-in modules**: Lock-in input = `in1`.
+2. **Square oscillator**: Half period = `50 kHz` (→ 1249, quadrature 90°), Phase = 0. The frequency has to be inside
+   the bandwidth of the system (here the simulator has a ~20 kHz low-pass filter at its input: 50 kHz still passes
+   attenuated, 31.25 MHz does not).
+3. **Auxiliar → Square Modulation Amplitude**: *A Out1* = 100 (±50 counts ≈ ±6 mV added to OUT1), *A Out2* = −1.
+4. **Demodulation → sqX & sqY**: filter 262 µs | 607 Hz, order 2; Amplification ×32.
+5. Look at `sqXo` and `sqYo` (OscA/OscB) during the scan. In the test: sqYo went from +4933 to −3825 counts with the
+   zero crossing at 16.69 ms, sqXo from +2072 to −1234 (crossing at 16.74 ms): sqYo has 2.4× more slope, so it is the
+   one used. The crossing appears ~0.4 ms after the peak of IN1 because of the delay of the 262 µs 2nd-order filter
+   during the scan; it does not move the lock point (static). Instead of choosing sqX or sqY, the Phase can be
+   adjusted so that sqFo has the largest slope.
+6. **PIDs modules**: Error signal = `sqYo`, offset 0.
+7. OscA = `ctrl_A`, OscB = `error`.
 
 ### 3. Close the lock
 
-1. **PID A**: input = error, kp = −500 (/1024), ki = −20 (537 ms). The sign of the gains has to give
-   negative feedback around the zero crossing (try the other sign if the lock runs away).
+1. **PID A**: input = error, kp = −500 (/1024), ki = −20 (537 ms). The sign of the gains has to give negative
+   feedback around the zero crossing (here sqYo > 0 before the peak, so negative gains; try the other sign if the
+   lock runs away).
 2. **Lock Control → config**: while locked, *PID A enable* on and *Scan enable* off.
 3. Choose the trigger:
-   - **Time trigger**: press *Choose from graph* and click on the zero crossing of the error (16.58 ms in
-     the example). With *Fire on click* on, the click also fires *Trigger Lock*.
-   - **Level trigger**: Signal for trigger = error, Level = the value of the error just before the
-     crossing (5085 counts = 621 mV in the test), *trig upward?* according to the slope.
+   - **Time trigger**: press *Choose from graph* and click on the zero crossing of the error (16.56 ms →
+     2070178 ticks in the test). With *Fire on click* on, the click also fires *Trigger Lock*.
+   - **Level trigger**: Signal for trigger = error, Level = a value of the error just before the crossing,
+     *trig upward?* according to the slope. In the test 4000 counts (488 mV, upward): the maximum of sqYo was ~4930,
+     so the 5085 of the harmonic App would never be reached.
    - **Lock Now**: locks immediately wherever the ramp is (useful only when the system is already near the
      point).
 4. Press **Trigger Lock**. The state goes OFF → ARMED → LOCKED in the next sweep; with *Capture Lock* the
-   scope shows the closing of the loop (t = 0 is the lock) and keeps it frozen:
+   scope shows the closing of the loop (t = 0 is the lock, ctrl_A blue, error red) and keeps it frozen, with the
+   banner "Lock captured (t = 0: lock, 16.6 ms after the scan floor)":
 
-![Lock captured with the time trigger](.Usage/capture_lock_time_trigger.jpg)
+![Lock captured with the time trigger (Square Lock-in+PID 2.0.0-5)](.Usage/sq_capture_lock_time_trigger.jpg)
 
-With the level trigger the lock is placed at 30 % of the window:
+With the level trigger the capture uses the window the scope had (here the 130 µs left by AUTO):
 
-![Lock captured with the level trigger](.Usage/capture_lock_level_trigger.jpg)
+![Lock captured with the level trigger, 130 µs window (Square Lock-in+PID 2.0.0-5)](.Usage/sq_capture_lock_level_trigger_us.jpg)
 
-Fire on click on a frozen capture moves the lock point and locks again (GIF):
+*Choose from graph* with *Fire on click* sets the time and fires the lock in one click (GIF of the test):
 
-![Fire on click](.Usage/fire_on_click.gif)
+![Fire on click (Square Lock-in+PID 2.0.0-5)](.Usage/sq_fire_on_click.gif)
 
-If *Choose from graph* shows the red warning, t = 0 of the plot is not the scan floor and the time taken
-from the click would be wrong:
-
-![Choose from graph warning](.Usage/choose_from_graph_warning.jpg)
+![Lock captured after Fire on click (Square Lock-in+PID 2.0.0-5)](.Usage/sq_capture_fire_on_click.jpg)
 
 The frozen capture ends (and the scope settings saved before the capture are restored) with trigger mode
 Auto/Normal, *Single*, **AUTO**, a change of source or Ext Trig, unchecking *Capture Lock*, or a release
-while waiting. *Autoscale* keeps it.
+while waiting. *Autoscale* keeps it. While the capture is frozen the page sends nothing (0 POST in 63 and 87 s in
+the test).
 
 ### 4. Check the lock and release it
 
-1. Set the trigger Mode to **Auto**: the ramp has stopped and the error stays at 0 (OscA = `ctrl_A`,
-   OscB = `error`):
+1. Set the trigger Mode to **Auto** (or press AUTO): the ramp has stopped and ctrl_A and the error stay constant.
+   With a short window the residue of the 50 kHz modulation is seen (±1.5 mV on ctrl_A, ±3 mV on the error):
 
-![Locked: ctrl_A and error](.Usage/locked_auto_ctrlA_error.jpg)
+![Locked with the level trigger, Auto, 130 µs: ctrl_A (blue) and error (red) (Square Lock-in+PID 2.0.0-5)](.Usage/sq_locked_auto_ctrlA_error_130us.jpg)
 
-2. With OscA = `in1` the signal stays at the top of the peak (1.01–1.03 × the peak in the tests):
-
-![Locked: in1 and error](.Usage/locked_auto_in1_error.jpg)
-
-3. The **Monitor** panel shows the mean (≈ 0) and the std of the error (≈ 60 counts ≈ 7–8 mV in the tests).
+2. With OscA = `in1` the signal stays at the top of the peak (0.97–0.98 × the peak in the test; it fluctuates with
+   the response to the modulation).
+3. The **Monitor** panel shows the mean (≈ 0) and the std of the error (≈ 21–25 counts ≈ 2.6 mV with sqYo ×32 in the
+   test).
 4. **Release**: a second click on *Trigger Lock* (or *Lock Now*), or a click on *Scan enable* (restarts the
    scan with the PIDs as they were).
 
-A lock can also be closed and checked without the web page, with `py/lock_from_registers.py` on the board
-or over HTTP (see [Remote.md](Remote.md)); the page follows the state without sending anything.
+Results of the test (2.0.0-5 and 2.0.0-6): 5/5 locks, ctrl_A 8.5–8.8 mV at the lock point (the same point as with
+the harmonic App), 88 s, 134 s and 16 s locked until released by hand ([App.md](App.md#lock-control-auto-lock)).
+
+A lock can also be closed and checked without the web page, with `py/lock_from_registers.py` on the board or over
+HTTP (see [Remote.md](Remote.md)); the page follows the state without sending anything.
+
+### 5. Working at 31.25 MHz
+
+Half period = 1 (`31.25 MHz`) is the highest frequency with quadrature (4 ticks per period). Things to know
+(from the design and the simulations; **the lock at 31.25 MHz has not been tested on the board yet, a confirmar**):
+
+- The signal at the output is not square: the DAC samples +A, +A, −A, −A are those of a sine of amplitude ≈ 1.27·A
+  after the DAC ([App.md](App.md#square-modulation-generator)).
+- The Phase only has 4 values (0, 90°, 180°, 270°). Use sqX, sqY and the R | φ of the Square Lock-in display to
+  see the real phase of the signal, and choose the component (or the sign of the PID gains) accordingly.
+- The analog path adds a delay: each 8 ns is 90° at this frequency.
+- The filter can be much shorter than at 50 kHz (the product has its AC part at 62.5 MHz): a few hundred ns already
+  removes it, which allows a faster loop.
+- The setup under test must pass 31.25 MHz: in the test bench the input filter of `dummy_simulator` (~20 kHz) had to
+  be turned off for this test, still pending.
 
 ## Saving and loading configurations
 
 **Config** opens the configuration dialog:
 
-![Configuration dialog](.Usage/config_modal.jpg)
+![Configuration dialog (lock_in+pid_harmonic, same dialog)](.Usage/config_modal.jpg)
 
 - *Save in browser* stores all the parameters (and the Capture Lock / Fire on click preferences) under the
-  *Config Name* in the browser (`localStorage`, key specific of this App). *Save as file* downloads a JSON.
+  *Config Name* in the browser (`localStorage`, key `lockConfig_lock_in+pid_square`, own key of this App: the
+  configs of lock_in+pid / lock_in+pid_harmonic are not shown nor imported, their lock-in parameters are different).
+  *Save as file* downloads a JSON.
 - The list shows the saved configs with *del*, *download* and *load*. *Load file* adds a JSON file to the list
-  (then press its *load*).
+  (then press its *load*). The test configuration `test_files/lock_in+pid_square__lock_mode.json` (Apps folder) is
+  such a file.
 - **Don't turn on PIDs and Ramp on config loading**: when checked, a loaded config never turns on the
   ramp, the PIDs or a lock request (safe default when the outputs are connected to an experiment).
 - Configs are per browser, not stored on the board.
-- **Time window** (v2.3.17): *load* applies the time window of the config in the units it was saved with.
-  The config keeps `xmin`/`xmax` in the time units of the moment it was saved (µs, ms or s); the page converts
-  them to seconds, sets the window in the current units and then takes the window and units that the server
-  ends with (the answer of the last of the 5-9 POSTs of a load), so page, axes and server agree. The scale values
-  that the server derives (`time_units`, `time_range`, `gui_xmin`, `gui_xmax`, `forcex_flag`) are not loaded nor
-  sent. Up to v2.3.16 the window was taken in the units of the server (`lock_mode`, saved in ms, loaded with the
-  scope in µs gave −2…33 **µs**) or not applied at all. Tested on the board: 14/14 loads (from 0-131 µs,
-  10-120 µs, 0-10 ms, 0-2 s, and a config in µs loaded with the page in ms).
-- A load ends a frozen lock capture (the config brings its own scope settings).
+- A load sends the whole config (148 keys in 5-9 POST in the test) except the read-only values, applies the time
+  window of the config in the units it was saved with, and ends a frozen lock capture.
 
-![lock_mode loaded with the scope in µs: window −2.07…33.49 ms (v2.3.17)](.Usage/config_load_lock_mode_window.jpg)
+![A config loaded with the scope in µs: window −2.07…33.49 ms (lock_in+pid_harmonic v2.3.17)](.Usage/config_load_lock_mode_window.jpg)
 
 ## Saving data
 
@@ -357,23 +410,26 @@ file, copy or show).
 Only one browser tab should control the board. When another client (another tab, the main menu, another
 App) takes the board, the page stops polling and shows a dialog:
 
-![Another client took control](.Usage/restart_modal.jpg)
+![Another client took control (lock_in+pid_harmonic, same dialog)](.Usage/restart_modal.jpg)
 
 *Restart* restarts the App and restores the state of this tab (if the other client loaded the same App,
-the FPGA is not reloaded). On Ecosystem 2.0 the page also enters a "cautious mode" when the board answers
-slowly, and waits until it answers fast again.
+the FPGA is not reloaded). With this App a `bazaar?stop` from outside was detected, and the page relaunched the App
+and restored its registers and the streaming IP in 7.8 s (`reportes/lock-in_pid_sq.md` step 6). On Ecosystem 2.0
+the page also enters a "cautious mode" when the board answers slowly, and waits until it answers fast again.
 
 ## Known limitations of the interface
 
-- The **Slow outputs** selectors have no effect; the **R|Phase Mode** button is disabled.
-- *Time trigger* values above 2²⁴ ticks (134 ms) set from the page are rounded to the float32 grid (≤ 1 µs).
-- *Ramp period* typed in `s`/`ms` sets `ramp_step` for (hig − low) steps, i.e. half of the period in
-  triangle mode (`index.html` l. 1842-1847): check the τ shown below the field.
-- The labels of *Signal for trigger* 6-8 show code text (`/*sqXo */ 14'b0`): those options are 0.
+- The **Slow outputs** selectors have no effect (and list harmonic names); the **R|Phase Mode** button is disabled.
+- *Time trigger* and *Half period* values above 2²⁴ set from the page are rounded to the float32 grid.
+- *Ramp period* typed in `s`/`ms` (if it could be typed) sets `ramp_step` for (hig − low) steps, i.e. half of the
+  period in triangle mode (`index.html` l. 1867-1871): check the τ shown below the field.
 - Each change made in the page is a `POST /data`, and on Ecosystem 2.0 each one leaves an open connection in the
   nginx of the board; after ~1000 the board stops answering until nginx is restarted
   ([Remote.md](Remote.md#known-issue-of-the-ecosystem-post-data-leaves-connections-open)).
 - Level+time with the time after the level crossing stays ARMED (the level crossing has to happen after
   the time).
+- After an acquisition from Python (`acquire()` + `scope_auto()`) the page goes back to Auto in 1–2 s; if a field of
+  the page is being edited (focus) it is applied when the edit ends. Once (2.0.0-5) the page stayed in "Single":
+  press AUTO or click outside the field (CHANGELOG, v2.0.0).
 
-These items are listed for devAgent in `docAgent.md`.
+These items are listed for devAgent in `docAgent.md` (Apps folder).

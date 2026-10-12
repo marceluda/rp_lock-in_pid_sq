@@ -110,7 +110,7 @@ report: worst path to `sys_rdata` −10.035 ns → +1.892 ns, design WNS −10.0
 | `0x030` | 12 | `rl_signal_sw` | RW | 3 | u | 0..7 | 0 | Re-lock: signal compared with `rl_signal_threshold` (0 in1, 1 in2, 2 in1−in2, 3 aux_A, 4 aux_B, 5 sqXo, 6 sqYo, 7 sqFo). |
 | `0x034` | 13 | `rl_signal_threshold` | RW | 14 | s | -8192..8191 | 0 | Re-lock: out of lock when `signal < rl_signal_threshold`. |
 | `0x038` | 14 | `rl_config` | RW | 3 | u | 0..7 | 0 | Re-lock: `[0]` enable error threshold, `[1]` enable signal threshold, `[2]` relock reset. |
-| `0x03C` | 15 | `rl_state` | R | 5 | u | 0..0 | — | **Always reads 0** (`lock.v` l. 133, `assign rl_state = 5'b0`; `lock.txt` 0..0 since v2.3.15). Intended: `[state, signal_fail, error_fail, locked]`. |
+| `0x03C` | 15 | `rl_state` | R | 5 | u | 0..0 | — | **Always reads 0** (`lock.v` l. 135, `assign rl_state = 5'b0`; `lock.txt` 0..0 since v2.3.15). Intended: `[state, signal_fail, error_fail, locked]`. |
 | `0x040` | 16 | `sf_jumpA` | RW | 14 | s | -8192..8191 | 0 | Step-response measurement: value added to `ctrl_A` during the step. |
 | `0x044` | 17 | `sf_jumpB` | RW | 14 | s | -8192..8191 | 0 | Same for `ctrl_B`. |
 | `0x048` | 18 | `sf_config` | RW | 5 | u | 0..31 | 0 | Step response: `[0]` start, `[1]` freeze PID A output, `[2]` freeze PID A integrator, `[3]` freeze PID B output, `[4]` freeze PID B integrator (during the step). |
@@ -212,7 +212,7 @@ PID B is identical to PID A at offset `+0x34` (indices +13).
 | `0x110` / `0x144` | 68 / 81 | `pidX_in` | R | 14 | s | -8192..8191 | — | PID input (output of the selector). |
 | `0x114` / `0x148` | 69 / 82 | `pidX_out` | R | 14 | s | -8192..8191 | — | PID output **after** the lock enable (0 while the PID is disabled). |
 | `0x118` / `0x14C` | 70 / 83 | `pidX_ctrl` | RW | 3 | u | 0..7 | 0 | `[0]` integrator reset, `[1]` freeze output, `[2]` freeze integrator. |
-| `0x11C` / `0x150` | 71 / 84 | `ctrl_A` / `ctrl_B` | R | 14 | s | -8192..8191 | — | Control signal: `pidX_out + ramp_X + sf_jumpX` saturated to 14 bits (`lock.v` l. 278-282). Frozen by `read_ctrl[0]`. |
+| `0x11C` / `0x150` | 71 / 84 | `ctrl_A` / `ctrl_B` | R | 14 | s | -8192..8191 | — | Control signal: `pidX_out + ramp_X + sf_jumpX` saturated to 14 bits (`lock.v` l. 265-270). Frozen by `read_ctrl[0]`. |
 
 ### Streaming
 
@@ -255,15 +255,15 @@ manual enables and `set_pidA`/`set_pidB` on, trigger type 0 and rising level.
 | 1 | locked (state LOCKED) |
 | 2 | effective PID B enable |
 | 3 | effective PID A enable |
-| 4 | effective ramp enable of the lock control (the ramp also needs `ramp_enable`, 0x0B0) |
+| 4 | effective ramp enable of the lock control (the ramp also needs `ramp_enable`, 0x0A0) |
 | 7:5 | 0 |
 | 15:8 | number of entries into LOCKED, modulo 256 |
 
-Example from the board: `0x110A` = locked, PID A on, 17 locks (`reportes/lock-in_pid_h_lock_test/2026-10-08_22:45:40_lock.md` §3).
+Examples from the board with this App: `0x10A` = locked, PID A on, 1 lock; `0x20A` = locked, 2 locks (`reportes/lock-in_pid_sq_lock_test/2026-10-12_01:00:00_lock.md` §5).
 
 #### `trig_sw` (0x00C)
 
-`trigger_signals` in `lock.v` l. 348-356. The scope external trigger is a pulse of 8 ticks
+`trigger_signals` in `lock.v` l. 333-341. The scope external trigger is a pulse of 8 ticks
 (`lock/trigger_input.v`, N = 3) on every rising edge of `|(trigger_signals & trig_sw)`. The UI selects one
 bit at a time ("Ext Trig" in the Oscilloscope panel).
 
@@ -294,7 +294,7 @@ From `lock.v` (Signal Processing) and `lock/LP_filter_sq.v`. Each line (sqX, sqY
 `[4:0]` = n (0..27; larger values act as 27): time constant τ = 8 ns · 2^(n+3) (64 ns .. 8.59 s), cut-off
 f = 1/(2πτ) (2.49 MHz .. 18.5 mHz). The C controller writes `order << 5 | tau`. Reset value 71 = order 2, n = 7
 (8.19 µs, 19.4 kHz). The stage uses its output one tick late in the feedback (timing); with k ≥ 3 the response
-is the one of the ideal first-order filter (simulated: 63 % of a step after 1029 ticks for n = 7, k = 10).
+is the one of the ideal first-order filter (simulated, `test/sq_lockin_sim.sh`: 63 % of a step after 1031 ticks for k = 10, ideal 1024; `devAgent.md` 2026-10-12 00:50).
 
 ### Selector values
 
@@ -348,7 +348,7 @@ The labels are the ones of the UI (`index.html`) and of `reg_labels` in
 0 error, 1 sqXo, 2 sqYo, 3 sqFo, 4 signal_i, 5 Ramp A, 6 aux_A, 7 in1, 8 in2, 9 in1 − in2, 10 PID A out,
 11 PID B out (both before the enable), 12 ctrl_A, 13 ctrl_B, 14 Ramp B, 15 aux_B.
 
-`in1 − in2` is saturated to 14 bits (`sat14`, `lock.v` l. 518-519).
+`in1 − in2` is saturated to 14 bits (`sat14`, `lock.v` l. 508-509).
 
 ## Oscilloscope (0x40100000)
 
@@ -381,7 +381,7 @@ and `src/fpga.h`.
 
 Maximum time span of an acquisition: 16384 · 8 ns · Dec (0.131 ms at Dec 1, 68.7 s at Dec 524288).
 
-Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 256, `rp_scope_com.v` l. 194-207):
+Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 244, `rp_scope_com.v` l. 194-207):
 `[1:0]` = `osc_ctrl` (filter bypass), `[2]` = `stream_cmd[0]` (use the streaming decimation),
 `[19:3]` = `stream_rate`, `[20]` = end of streaming pulse.
 
@@ -392,7 +392,9 @@ Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 256, `rp_scope_com.v` l. 1
   `slow_out3_sw`/`slow_out4_sw` are not registers (undeclared nets). There are no slow-output registers in
   the map. See the differences below.
 - **Extension connector:** DIO0_P = external trigger input (bit 0 of `trig_sw`), DIO6_N = ramp direction
-  output, DIO7_N = digital modulation output (always 0, `lock.v` l. 591). If CAN is enabled in the
+  output, DIO7_N = digital modulation output = `sq_ref` (TTL reference of the square generator,
+  `assign digital_modulation = sq_ref_b`, `lock.v` l. 581; it was always 0 in lock_in+pid_harmonic). Not measured on
+  the board: a confirmar. If CAN is enabled in the
   housekeeping, DIO6_N/DIO7_N go back to CAN TX (`red_pitaya_top.sv` l. 539-546).
 
 ## Register description files (`lock.txt`, `osc.txt`)
@@ -410,7 +412,8 @@ The previous `doc/README.md` (a copy of `lock.txt` as a table) was replaced by t
 ## Differences found between the files and the RTL
 
 Checked against `lock.v`, `lock/*.v`, `red_pitaya_top.sv`, `rp_scope_cfg.v`, `rp_scope_com.v`,
-`src/fpga.h`, `src/fpga_lock.h`. The tables above follow the RTL. Reported to devAgent (see
+`src/fpga.h`, `src/fpga_lock.h` (docAgent, 2026-10-12, v2.0.0: the 91 offsets of the bus decoder of `lock.v`
+l. 1023-1113 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the tables above). The tables above follow the RTL. Reported to devAgent (see
 `docAgent.md`); rows 1-6 and 8 were fixed in v2.3.15 (history of lock_in+pid_harmonic, kept here: the line numbers and offsets of this table are the ones of that App).
 
 | # | File | Item | File says | RTL does |
@@ -423,6 +426,8 @@ Checked against `lock.v`, `lock/*.v`, `red_pitaya_top.sv`, `rp_scope_cfg.v`, `rp
 | 6 | `c/lock.txt` | `lock_trig_time` max | 4294967295 | only bits `[30:0]` were compared (`lock_ctrl.v`). **Fixed in v2.3.15**: 32-bit counter and comparator |
 | 7 | `c/lock.txt` | `pidX_SAT` | 0..13 | 14-bit register, only `[7:0]` used; consistent in practice |
 | 8 | `lock.v` / `src/fpga_lock.h` comments | `X_28` / `Y_28` | "from sin_ref" / "from cos_ref" | X from `cos_ref`, Y from `sin_ref` (`lock.v` l. 768-769). **Fixed in v2.3.15** |
-| 9 | `lock.v` / `fpga_lock.h` comments | `ctrl_B` | "pidA_out + ramp_B" | `pidB_out + ramp_B + sf_jumpB` (still in v2.3.17: `lock.v` l. 1174, 1294; `fpga_lock.h` l. 769) |
-| 10 | `src/fpga.h` comment | `data_dec` | "bits [16:0]" | 20 bits (still in v2.3.17, l. 113) |
-| 11 | `fpga/README.md` | scope decimation | "17-bit decimation (max 64k)" | 20 bits (max 512k), as said in the CHANGELOG of v2.3.10 (still in v2.3.17, l. 66-67) |
+| 9 | `lock.v` / `fpga_lock.h` comments | `ctrl_B` | "pidA_out + ramp_B" | `pidB_out + ramp_B + sf_jumpB`. **Fixed in v2.3.18** |
+| 10 | `src/fpga.h` comment | `data_dec` | "bits [16:0]" | 20 bits. **Fixed in v2.3.18** |
+| 11 | `fpga/README.md` | scope decimation | "17-bit decimation (max 64k)" | 20 bits (max 512k). **Fixed in v2.3.18** (`fpga/README.md` l. 67) |
+| 12 | `index.html` | *Slow outputs* selectors | options `sin_ref`, `cos_ref`, `cos_1f..3f` (labels of lock_in+pid_harmonic) | the selectors have no register and no effect in this App (see [Other blocks](#other-blocks)); the RTL muxers `slow_out3/4_sw_m` list `sq_ref`, `sqXo`... Cosmetic, reported to devAgent (v2.0.0) |
+| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1587); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |
