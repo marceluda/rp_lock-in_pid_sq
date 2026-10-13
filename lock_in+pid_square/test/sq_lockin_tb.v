@@ -132,6 +132,11 @@ module sq_lockin_tb;
     real X, Y, F, eX, eY, eF;
     integer L;   // latency of the loop inside the module (ticks), measured
 
+    // v2.0.1: out1/out2 come 1 clock after the modulation (register before the DAC): compared with the references
+    // of the clock before
+    reg sq_ref_b_d1 = 1'b0, sq_quad_b_d1 = 1'b0;
+    always @(posedge clk) begin sq_ref_b_d1 <= dut.sq_ref_b; sq_quad_b_d1 <= dut.sq_quad_b; end
+
     task measure(input integer settle);
         begin
             repeat (settle) @(posedge clk);
@@ -238,7 +243,7 @@ module sq_lockin_tb;
         n_on = 0;
         for (i = 0; i < 40; i = i + 1) begin
             @(posedge clk); #1;
-            if (out1 !== (dut.sq_ref_b ? 14'sd1000 : -14'sd1000)) n_on = n_on + 1;
+            if (out1 !== (sq_ref_b_d1 ? 14'sd1000 : -14'sd1000)) n_on = n_on + 1;
         end
         if (n_on != 0) begin $display("FAIL OUT1 modulation: %0d samples differ from +-1000 (sq_ref)", n_on); fails = fails + 1; end
         else $display("OUT1 = +-1000 with sq_ref OK");
@@ -248,7 +253,7 @@ module sq_lockin_tb;
         repeat (5) @(posedge clk);
         for (i = 0; i < 40; i = i + 1) begin
             @(posedge clk); #1;
-            if (out2 !== (dut.sq_quad_b ? 14'sd500 : -14'sd500)) n_on = n_on + 1;
+            if (out2 !== (sq_quad_b_d1 ? 14'sd500 : -14'sd500)) n_on = n_on + 1;
         end
         if (n_on != 0) begin $display("FAIL OUT2 modulation: %0d samples differ from +-500 (sq_quad)", n_on); fails = fails + 1; end
         else $display("OUT2 = +-500 with sq_quad OK");

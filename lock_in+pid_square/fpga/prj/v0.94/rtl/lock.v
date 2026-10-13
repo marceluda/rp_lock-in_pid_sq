@@ -204,6 +204,9 @@ module lock(
     wire        [24-1:0] slow_out1_aux,slow_out2_aux,slow_out3_aux,slow_out4_aux ;
 
     wire signed [14-1:0] pidA_out_cache,pidB_out_cache ;
+    reg                  pidA_enable_d=1'b0,pidB_enable_d=1'b0 ;                            // v2.0.1
+    reg  signed [14-1:0] out1_tmp_r=14'd0,out2_tmp_r=14'd0 ;                               // v2.0.1
+    reg  signed [15-1:0] mod_half1_r=15'd0,mod_half2_r=15'd0 ;                             // v2.0.1
 
     wire signed [15-1:0] in1_m_in2,in1_m_in2_aux;
 
@@ -414,8 +417,19 @@ module lock(
     assign mod_half1   = sq_ref_b  ? $signed({ {2{mod_out1[13]}}, mod_out1[13:1] }) : -$signed({ {2{mod_out1[13]}}, mod_out1[13:1] }) ;
     assign mod_half2   = sq_quad_b ? $signed({ {2{mod_out2[13]}}, mod_out2[13:1] }) : -$signed({ {2{mod_out2[13]}}, mod_out2[13:1] }) ;
 
-    assign out1_plus   = ~mod_out1[13] ? $signed(out1_tmp) + $signed(mod_half1) : $signed(out1_tmp) ;
-    assign out2_plus   = ~mod_out2[13] ? $signed(out2_tmp) + $signed(mod_half2) : $signed(out2_tmp) ;
+    // v2.0.1 (from lock_in+pid_harmonic v2.3.19): the outputs to the DACs come 1 clock (8 ns) later, for everything
+    // that goes out (PID/ctrl, ramp, modulation, in1...): the two terms of the sum (output of the out1/out2 mux and
+    // modulation) are registered and added after the register. Same values: ~mod[13] ? tmp + half : tmp ==
+    // tmp + (~mod[13] ? half : 0). See doc/lock_latency.md.
+    always @(posedge clk) begin
+        out1_tmp_r   <=  out1_tmp ;
+        out2_tmp_r   <=  out2_tmp ;
+        mod_half1_r  <=  ~mod_out1[13] ? mod_half1 : 15'b0 ;
+        mod_half2_r  <=  ~mod_out2[13] ? mod_half2 : 15'b0 ;
+    end
+
+    assign out1_plus   = $signed(out1_tmp_r) + $signed(mod_half1_r) ;
+    assign out2_plus   = $signed(out2_tmp_r) + $signed(mod_half2_r) ;
 
     satprotect #(.Ri(15),.Ro(14),.SAT(14)) i_satprotect_out1  ( .in(out1_plus),  .out(out1) );
     satprotect #(.Ri(15),.Ro(14),.SAT(14)) i_satprotect_out2  ( .in(out2_plus),  .out(out2) );
@@ -714,13 +728,21 @@ module lock(
     // registers (they start at 0 when the FPGA is configured)
     reg  signed [15-1:0] signal_i_15 = 15'sd0 ;
     reg                  ref_X = 1'b0, ref_Y = 1'b0, ref_F = 1'b0 ;
+    // v2.0.1 (from lock_in+pid_harmonic v2.3.19): one more register for the references (ref_*0): the outputs to the
+    // DACs got a register (+1 clock, also for the square modulation), so the reference and the signal that comes
+    // back through DAC -> system -> ADC keep the phase of before (essential at 31.25 MHz, where 1 clock is 90 deg).
+    // The lock-in outputs keep their latency from in1. See doc/lock_latency.md.
+    reg                  ref_X0 = 1'b0, ref_Y0 = 1'b0, ref_F0 = 1'b0 ;
     reg  signed [15-1:0] prod_X = 15'sd0, prod_Y = 15'sd0, prod_F = 15'sd0 ;   // +-signal_i (15 bits: -(-8192) fits)
 
     always @(posedge clk) begin
         signal_i_15 <= { signal_i[13], signal_i } ;
-        ref_X       <= sq_ref_b  ;
-        ref_Y       <= sq_quad_b ;
-        ref_F       <= sq_phas_b ;
+        ref_X0      <= sq_ref_b  ;
+        ref_Y0      <= sq_quad_b ;
+        ref_F0      <= sq_phas_b ;
+        ref_X       <= ref_X0    ;
+        ref_Y       <= ref_Y0    ;
+        ref_F       <= ref_F0    ;
         prod_X      <= ref_X ? signal_i_15 : -signal_i_15 ;
         prod_Y      <= ref_Y ? signal_i_15 : -signal_i_15 ;
         prod_F      <= ref_F ? signal_i_15 : -signal_i_15 ;
@@ -896,7 +918,10 @@ module lock(
       .int_rst_i    (  pidA_irst|(~pidA_enable_ctrl)    )   // integrator reset
     );
 
-    assign pidA_out = pidA_enable_ctrl ? pidA_out_cache : 14'b0 ;
+    // v2.0.1 (from lock_in+pid_harmonic v2.3.19): the PID output is registered inside lock_pid_block (+1 clock);
+    // the enable that gates it is delayed by the same clock, so pidA_out is the old one one clock later
+    always @(posedge clk) pidA_enable_d <= pidA_enable_ctrl ;
+    assign pidA_out = pidA_enable_d ? pidA_out_cache : 14'b0 ;
 
     muxer4  #(.RES(14)) i_muxer5_pidB (
         // input
@@ -939,7 +964,8 @@ module lock(
       .int_rst_i    (  pidB_irst|(~pidB_enable_ctrl)    )   // integrator reset
     );
 
-    assign pidB_out = pidB_enable_ctrl ? pidB_out_cache : 14'b0 ;
+    always @(posedge clk) pidB_enable_d <= pidB_enable_ctrl ;
+    assign pidB_out = pidB_enable_d ? pidB_out_cache : 14'b0 ;
 
 
     /* end PIDs Blocks  ***********************************************/

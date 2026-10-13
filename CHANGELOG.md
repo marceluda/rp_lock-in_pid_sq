@@ -20,6 +20,22 @@ because this is a new App (the 0.x / 1.x numbers would suggest a version for the
 exist for this App).
 
 
+## v2.0.1 (2026-10-13) - FPGA timing: pipeline registers in the PIDs and the outputs
+
+Port of the timing work of `lock_in+pid_harmonic` v2.3.19 (the user allowed adding latency): **WNS -9.308 -> -0.657 ns,
+TNS -5095 -> -59 ns, 3409 -> 301 failing endpoints** (adc_clk -> dac_clk_1x +1.819 ns). Same behaviour except for the
+latencies, checked bit by bit in simulation against v2.0.0. Details: `lock_in+pid_square/doc/lock_latency.md`.
+
+- Changed (FPGA, added latency, 8 ns per clock): PID outputs +1 (`lock_pid_block` output registered, enable delayed
+  with it); `out1`/`out2` +1 for everything that goes to the DACs (out mux and square modulation registered before
+  the sum). LOCK MODE loop +16 ns. The square generator and the square lock-in are not changed.
+- Changed (FPGA): the references reach the square lock-in 1 clock later (`ref_X0..F0`), so the phase measured through
+  DAC -> system -> ADC does not change (without it: -90 deg at 31.25 MHz).
+- Changed (FPGA, same values): `sat14` without barrel shifter, PID integrator with the ISR shift in parallel.
+- Changed: page title (`h2.page-title`) and `<title>` get the version of `info/info.json` at build time (Makefile).
+- Added `test/lock_latency_sim.sh` + `test/lock_latency_tb.sv` (xsim, 338 checks against v2.0.0);
+  `test/sq_lockin_tb.v` compares OUT1/OUT2 with the references of the clock before.
+
 ## v2.0.0 (2026-10-11)
 
 First version. Built from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`). Tested on the board

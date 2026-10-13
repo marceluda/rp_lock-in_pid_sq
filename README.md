@@ -21,7 +21,7 @@ local copy, branch `devel2.0`, tag `v2.0.0`).
 
 ## Version 2.0.0 (Ecosystem 2.0)
 
-Current version: **2.0.0** (branch `devel2.0`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.1** (branch `devel2.0`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
