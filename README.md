@@ -15,13 +15,12 @@ loop, controlled from a web page or remotely over HTTP.
 
 ![Lock captured with the square lock-in at 50 kHz: ctrl_A (blue) and error = sqYo (red), t = 0 at the lock (v2.0.0)](.README/sq_lock_captured_v2.0.0.jpg)
 
-**Repository:** `https://github.com/marceluda/rp_lock-in_pid_sq` (to be created; until then the code lives in the
-local copy, branch `devel2.0`, tag `v2.0.0`).
+**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0`, `v2.0.1`, `v2.0.2`).
 
 
 ## Version 2.0.0 (Ecosystem 2.0)
 
-Current version: **2.0.2** (branch `devel2.0`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.2** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.

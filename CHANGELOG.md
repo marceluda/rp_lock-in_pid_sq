@@ -186,6 +186,6 @@ with builds 5 and 6 (see Notes).
 ## Pending
 
 - Icon of the App (provisional: the one of lock_in+pid_harmonic).
-- GitHub repository `rp_lock-in_pid_sq` (to be created).
+- GitHub repository `rp_lock-in_pid_sq`: published 2026-10-15 (branch `master`).
 - Screenshots still missing in `doc/`: Square Lock-in display opened, sqF tab, Auxiliar / Square Modulation
   Amplitude, Outputs and Oscilloscope panels of this App, a scan with sqXo / sqYo.

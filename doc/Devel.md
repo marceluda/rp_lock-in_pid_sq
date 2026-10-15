@@ -1,6 +1,6 @@
 # Development: building and modifying the App
 
-How to build, modify, test and install `lock_in+pid_square` v2.0.0 (branch `devel2.0`). The internal
+How to build, modify, test and install `lock_in+pid_square` v2.0.2 (branch `master`). The internal
 structure is explained in [Structure.md](Structure.md) and the registers in [FPGA.md](FPGA.md).
 
 The build system, tools and tests are the ones of `lock_in+pid_harmonic` v2.3.18 (this repository was created as a
@@ -392,7 +392,7 @@ Notes for Ecosystem 2.0 (`testAgent.md`):
   0.9x / 1.0 ecosystems.
 - Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`
   (`lock_in+pid_square-2.0.0-6-devbuild.*`).
-- Branches: only `devel2.0` (Vivado 2020.1, Ecosystem 2.0). Tag `v2.0.0` (commit `9e7b4a9`); the tags `v2.3.x`
-  come with the history of lock_in+pid_harmonic.
-- GitHub repository `marceluda/rp_lock-in_pid_sq`: to be created (the URL is already in `CITATION.cff`).
+- Branches: only `master` (Vivado 2020.1, Ecosystem 2.0; it was called `devel2.0` until 2026-10-15). Tags `v2.0.0`,
+  `v2.0.1`, `v2.0.2`; the local tags `v2.3.x` come with the history of lock_in+pid_harmonic.
+- GitHub repository: https://github.com/marceluda/rp_lock-in_pid_sq, published 2026-10-15 (branch `master`, tags `v2.0.0`–`v2.0.2`; the `v2.3.x`/`v0.x` tags inherited from `lock_in+pid_harmonic` are not published here).
 - Icon: `info/icon.png` is still the one of lock_in+pid_harmonic (provisional; a new one will be provided).
