@@ -20,6 +20,13 @@ because this is a new App (the 0.x / 1.x numbers would suggest a version for the
 exist for this App).
 
 
+## v2.0.2 (2026-10-15) - App icon
+
+- New App icon and logo provided by the user (`resources/icon.png`, `resources/logo.png`, `resources/logo.svg`);
+  `lock_in+pid_square/info/icon.png` is now that icon (it was the icon of `lock_in+pid_harmonic`).
+- No FPGA, C or page logic changes (same bitstream as v2.0.1).
+
+
 ## v2.0.1 (2026-10-13) - FPGA timing: pipeline registers in the PIDs and the outputs
 
 Port of the timing work of `lock_in+pid_harmonic` v2.3.19 (the user allowed adding latency): **WNS -9.308 -> -0.657 ns,
