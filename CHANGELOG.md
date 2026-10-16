@@ -20,6 +20,37 @@ because this is a new App (the 0.x / 1.x numbers would suggest a version for the
 exist for this App).
 
 
+## v2.0.3 (2026-10-16) - Reset zoom, mouse wheel on the scope and slow scans (port of lock_in+pid_harmonic 2.3.21-2.3.23)
+
+Port of lock_in+pid_harmonic v2.3.21 (Reset zoom), v2.3.22 (mouse wheel) and v2.3.23 (slow scans, FPGA `lock_ctrl.v`);
+see its CHANGELOG for the details and the board tests. New FPGA image. Comments "v2.3.2x" refer to lock_in+pid_harmonic.
+
+- Added (page): **Reset zoom** sets X from t = 0 to one period of the ramp (Ext Trig = Scan floor / Scan ceil:
+  sawtooth (high−low+1)·(step+1), triangle 2·(high−low)·(step+1) ticks), one period of the **square modulation**
+  (Ext Trig = Square mod.: 2·(`gen_mod_sqp`+1) ticks, `gen_mod_sq.v`) or one whole memory at the current Dec (other
+  Ext Trig); periods ≥ 1.5 s: 0.98 × the period (at least 50 ms before the next trigger). Y to −1 … 1 V (raw mode
+  −8192 … 8192). During a lock capture it first ends it (as AUTO); the Raw Mode button rescales Y. The trigger menu
+  has no "harmonic mod." (removed in v2.0.0).
+- Added (page): **mouse wheel on the scope**: no key zooms both axes, SHIFT only time (cursor ↔), ALT only the Y axes
+  (cursor ↕, no POST); X window 20 ns … 68.7 s; local zoom during a lock capture; xmin/xmax sent without rounding to 2
+  decimals (a fast zoom from s to ms sent 0/0).
+- Fixed (controller, page): **slow scans** (windows ≥ 1.5 s): new long-acquisition reader in `src/worker.c`
+  (`rp_osc_long_rd_*`: never a sample of an older lap of the scope memory or from before the history, `adc_we_cnt`
+  register 0x2C, OK only when complete, ends at the window of the user); Capture Lock holds the lock request until the
+  scope has enabled its trigger (`lock_request_*` in `src/lock.c`, the POST answers at once); read-only params
+  `scope_gen`, `scope_acq_state`, `scope_acq_gen`, `sig_gen` (`PARAMS_NUM` 198 -> 202); page: capture recognised by
+  `sig_gen`, partial traces drawn, banners, real "LOCKED but not captured"; Reset zoom clears stale traces.
+- Fixed (FPGA, `lock_ctrl.v`, same file as lock_in+pid_harmonic 2.3.23): the time trigger counter is valid (`cnt_ok`)
+  only from a floor of a ramp that has been running since then (new input `ramp_run` = `ramp_enable & ~ramp_reset`),
+  and it saturates instead of wrapping every 34.4 s: a time (or level+time) request armed after a stop fires at the
+  next floor + time, never mid-scan. With the ramp running nothing changes.
+- `example_usage.py`: note about `time` / `timeout` for slow ramps.
+- Tests: new `test/reset_zoom_sim.js` (31, square periods), `test/plot_wheel_sim.js` (59), `test/ramp_mod_period_sim.sh`
+  (ramps and `gen_mod_sq` periods, 11); `lock_capture_ui_sim.js` section 8 (slow scan; the square-App section 8 of
+  v2.0.0 is now 9), `auto_set_c_sim` sections 6-9 (the square registers section 6 of v2.0.0 is now 10), `lock_ctrl_tb.v`
+  cases 16-19.
+
+
 ## v2.0.2 (2026-10-15) - App icon
 
 - New App icon and logo provided by the user (`resources/icon.png`, `resources/logo.png`, `resources/logo.svg`);

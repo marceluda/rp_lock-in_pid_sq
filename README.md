@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.0 (Ecosystem 2.0)
 
-Current version: **2.0.2** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.3** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -33,6 +33,13 @@ Current version: **2.0.2** (branch `master`). The major number 2 marks, as in th
 - Modulation added to the outputs: OUT1 ± `mod_out1`/2 with `sq_ref`, OUT2 ± `mod_out2`/2 with `sq_quad`.
 - Everything else as lock_in+pid_harmonic v2.3.18 (see its history in the [CHANGELOG](CHANGELOG.md)). The register
   map changes from `0x054` on: see [doc/FPGA.md](doc/FPGA.md).
+- 2.0.3 (from lock_in+pid_harmonic 2.3.21–2.3.23): **Reset zoom** sets the scope to one period of the ramp (Ext Trig =
+  Scan floor / Scan ceil), one period of the square modulation (Square mod., 2·(`gen_mod_sqp`+1) ticks) or one whole
+  memory at the current Dec, and Y to −1 … 1 V (raw mode −8192 … 8192); it ends a lock capture first, and Raw Mode
+  rescales Y. **Mouse wheel on the scope**: no key zooms both axes, **SHIFT** only time (cursor ↔), **ALT** only the
+  Y axes (cursor ↕). **Slow scans** (windows ≥ 1.5 s, e.g. a 30 s ramp): no samples of an older lap of the scope
+  memory, Capture Lock with long histories, Reset zoom at 0.98 × the period; (FPGA) a time trigger armed after the
+  ramp was stopped waits for the next scan floor.
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
 and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
