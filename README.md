@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.0 (Ecosystem 2.0)
 
-Current version: **2.0.3** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.4** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -40,6 +40,10 @@ Current version: **2.0.3** (branch `master`). The major number 2 marks, as in th
   Y axes (cursor ↕). **Slow scans** (windows ≥ 1.5 s, e.g. a 30 s ramp): no samples of an older lap of the scope
   memory, Capture Lock with long histories, Reset zoom at 0.98 × the period; (FPGA) a time trigger armed after the
   ramp was stopped waits for the next scan floor.
+- 2.0.4 (from lock_in+pid_harmonic 2.3.24): **scope presets** below Ext Trig: `in1|in2`, `in1|ctrl`,
+  `sqX|sqY` (sqXo, sqYo), `in1|err`, `ctrl|err` and `usr` (a pair of the user: double click to choose it; saved in the browser
+  and in the configs). They change only OscA/OscB (not the zoom nor the trigger). Picking an **Ext Trig** other than
+  None sets the Trigger panel to External + Normal.
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
 and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
