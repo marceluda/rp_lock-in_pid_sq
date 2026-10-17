@@ -1,6 +1,6 @@
 # Development: building and modifying the App
 
-How to build, modify, test and install `lock_in+pid_square` v2.0.2 (branch `master`). The internal
+How to build, modify, test and install `lock_in+pid_square` v2.0.4 (branch `master`). The internal
 structure is explained in [Structure.md](Structure.md) and the registers in [FPGA.md](FPGA.md).
 
 The build system, tools and tests are the ones of `lock_in+pid_harmonic` v2.3.18 (this repository was created as a
@@ -254,7 +254,11 @@ Where to change things:
 | Scope (decimation, `osc_ctrl_i`, bus read) | `rtl/rtl/classic/rp_scope_com.v`, `rp_scope_cfg.v`, `rp_decim.v` |
 | Constraints | `sdc/red_pitaya.xdc`, `prj/v0.94/sdc/` |
 
-Known: timing does not close, as in lock_in+pid_harmonic; the App works (lock tests on the board). FPGA of v2.0.0
+Timing since v2.0.1: almost closes (WNS −0.657 ns, TNS −59 ns, 301 endpoints; v2.0.3 −0.662 ns, `devAgent.md`):
+pipeline registers in the PIDs and the outputs ([`lock_latency.md`](../lock_in+pid_square/doc/lock_latency.md)). The
+rest of this paragraph is the state of v2.0.0.
+
+Known in v2.0.0: timing did not close, as in lock_in+pid_harmonic; the App works (lock tests on the board). FPGA of v2.0.0
 (build 4, 2026-10-11 20:22): **WNS −9.308 ns, TNS −5095 ns (3409 endpoints)**, in the inherited paths (PID B → scope
 mux, PID → `lock_ctrl.signal_now`, ADC → DAC clock −9.144 ns); the worst value moves between builds with the
 placement (build 3: −8.217 ns). **All the internal paths of the square generator / lock-in have positive slack**
@@ -324,7 +328,12 @@ After adding or changing a register: run the tool, rebuild FPGA + controller + t
 | `sq_lockin_tb.v` | `test/sq_lockin_sim.sh [work_dir]` (Vivado 2020.1 xsim) | v2.0.0: square generator (period, duty, quadrature, phase, trigger) and square lock-in of `lock.v` with OUT1 looped back to IN1 (sqX/sqY/sqF vs. the expected correlation at 31.25 MHz, 20.8 MHz, 625 kHz; gains, modulation, filters); prints `TB RESULT: PASS` |
 | `sq_modulation_ui_sim.js` | `node test/sq_modulation_ui_sim.js [index.html]` | v2.0.0: square generator fields with units, texts, `lpf_update()`, Square Lock-in display, HTML of the square panel |
 | `config_load_window_sim.js` | `node test/config_load_window_sim.js [--old]` | Config → load of the time window: conversion, and the real chunked send of `index.html` against a model of `rp_set_params()` (forceX handshake) plus a GET poll (v2.3.17) |
-| `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX |
+| `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX; since v2.0.3 also a model of the circular scope buffer and of the lock pulse (slow windows, Capture Lock with history, time trigger after a stopped ramp) |
+| `lock_latency_tb.sv` | `test/lock_latency_sim.sh [work_dir [old_ref]]` (Vivado 2020.1 xsim) | `lock.v` of the working tree side by side with the one of v2.0.0: every signal is the old one delayed by the latency of [`lock_latency.md`](../lock_in+pid_square/doc/lock_latency.md) (v2.0.1); prints `TB RESULT: PASS` |
+| `ramp_mod_period_tb.v` | `test/ramp_mod_period_sim.sh [work_dir]` (Vivado 2020.1 xsim) | periods of the ramp floor/ceil triggers and of the square modulation trigger (`gen_mod_sq`) on the RTL, the formulas used by Reset zoom (v2.0.3); prints `TB RESULT: PASS` |
+| `reset_zoom_sim.js` | `node test/reset_zoom_sim.js [index.html] [--old]` | the real `resetZoom()` against a model of the time range code of `src/main.c`, with square periods (v2.0.3) |
+| `plot_wheel_sim.js` | `node test/plot_wheel_sim.js [index.html]` | mouse wheel on the plot: no key / SHIFT / ALT, limits, debounce, Capture Lock (v2.0.3) |
+| `osc_presets_sim.js` | `node test/osc_presets_sim.js [index.html]` | the OscA\|OscB presets (with `sqX\|sqY`), the `usr` dialog and the Ext Trig → Trigger panel rule (v2.0.4) |
 
 `minor_ui_sim.js` (`node test/minor_ui_sim.js`) checks small details of the page (labels of this App).
 
@@ -335,7 +344,13 @@ configurations of the generator; sqX/sqY/sqF = expected correlation at 31.25 MHz
 latency 2 ticks; first-order τ 1031 ticks vs 1024), `lock_bus_read_sim` PASS (new addresses), `lock_ctrl_sim` 35/35,
 `config_load_window_sim` 21/21, `lock_capture_ui_sim` 73/73, `lock_ctrl_ui_sim` 28/28, `minor_ui_sim` 7/7,
 `sq_modulation_ui_sim` 29/29, `trig_input_units_sim` 38/38, `trig_from_graph_sim` 0 failures, `auto_set_c_sim` 28/28
-(part 6: square registers, exact writes above 2²⁴ from outside).
+(part 6: square registers, exact writes above 2²⁴ from outside). Counts reported in the CHANGELOG for later
+versions: `lock_latency_sim` 338 checks (v2.0.1); `reset_zoom_sim` 31, `plot_wheel_sim` 59, `ramp_mod_period_sim` 11
+(v2.0.3); `osc_presets_sim` 37 (v2.0.4). Node tests run by devAgent on 2.0.4
+(`build_logs/rp_lock-in_pid_sq_20261016_1635_v204_sim.txt` in the Apps folder): `osc_presets` 37/37,
+`config_load_window` 21/21, `lock_capture_ui` 83/83, `lock_ctrl_ui` 28/28, `minor_ui` 7/7, `plot_wheel` 59/59,
+`reset_zoom` 31/31, `sq_modulation_ui` 29/29, `trig_input_units` 38/38, `trig_from_graph` 0 failures (2.0.4 only
+changed the web page).
 
 The Python client `control_finn.py` was tested by devAgent against a fake HTTP server of the board (Lua argument
 order, `c/lock`/`c/osc`, 2.0 scope with trigger lock, a model of the C worker, `/data` that only answers a body
@@ -354,7 +369,7 @@ off (`dummy_lpf_on` = 0) on the other board ([Usage.md](Usage.md#5-working-at-31
 From a package (`archive/*.tar.gz` or `.zip`, or a GitHub release):
 
 ```bash
-tar -xzf lock_in+pid_square-2.0.0-<build>-devbuild.tar.gz
+tar -xzf lock_in+pid_square-2.0.4-<build>-devbuild.tar.gz
 ./upload_app.sh rp-XXXXXX.local          # -p <ssh port>; -w uploads only index.html, js, css
 ```
 
@@ -384,15 +399,17 @@ Notes for Ecosystem 2.0 (`testAgent.md`):
 
 ## Versioning and packages
 
-- Version: `lock_in+pid_square/info/info.json` (`"version": "2.0.0-BUILD_NUMBER"`, name "Square Lock-in+PID"), the
-  title of `index.html` (`Square lock-in+PID (v2.0.0)`), `CHANGELOG.md`, `README.md` ("Current version"). Build
-  number: `_build_number` (6 for the last build, `2.0.0-6-devbuild`). Revision: `REVISION` (default `devbuild`).
+- Version: `lock_in+pid_square/info/info.json` (`"version": "2.0.4-BUILD_NUMBER"`, name "Square Lock-in+PID"),
+  `CHANGELOG.md`, `README.md` ("Current version"). Since v2.0.1 the build writes the version of `info.json` in
+  `<title>` and in the page title of `target/…/index.html`; the title in the source `index.html` does not matter.
+  Build number: `_build_number` (v2.0.4 was built as `2.0.4-13-devbuild`). Revision: `REVISION` (default `devbuild`).
 - Numbering: the major 2 is the Ecosystem 2.0 version, as lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x and
   lock_in+pid_harmonic2 2.4.x; minor and patch start again because this is a new App. There is no version for the
   0.9x / 1.0 ecosystems.
 - Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`
-  (`lock_in+pid_square-2.0.0-6-devbuild.*`).
-- Branches: only `master` (Vivado 2020.1, Ecosystem 2.0; it was called `devel2.0` until 2026-10-15). Tags `v2.0.0`,
-  `v2.0.1`, `v2.0.2`; the local tags `v2.3.x` come with the history of lock_in+pid_harmonic.
+  (`lock_in+pid_square-2.0.4-13-devbuild.*`).
+- Branches: only `master` (Vivado 2020.1, Ecosystem 2.0; it was called `devel2.0` until 2026-10-15). Tags `v2.0.0`
+  .. `v2.0.4` (sq 2.0.1 = `_h` 2.3.19 timing work, 2.0.3 = 2.3.21-2.3.23, 2.0.4 = 2.3.24); the local tags `v2.3.x` come
+  with the history of lock_in+pid_harmonic.
 - GitHub repository: https://github.com/marceluda/rp_lock-in_pid_sq, published 2026-10-15 (branch `master`, tags `v2.0.0`–`v2.0.2`; the `v2.3.x`/`v0.x` tags inherited from `lock_in+pid_harmonic` are not published here).
-- Icon: `info/icon.png` is still the one of lock_in+pid_harmonic (provisional; a new one will be provided).
+- Icon: `info/icon.png` is the icon of this App since v2.0.2 (`resources/icon.png`, `logo.png`, `logo.svg`).

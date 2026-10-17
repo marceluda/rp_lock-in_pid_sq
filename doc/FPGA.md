@@ -1,6 +1,6 @@
 # FPGA register map
 
-Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.0** (branch `devel2.0`,
+Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.4** (branch `master`,
 Vivado 2020.1, RedPitaya-FPGA project `v0.94`, model Z10 / STEMlab 125-14).
 
 This App derives from `lock_in+pid_harmonic` v2.3.18: the register map is the same except for the
@@ -115,14 +115,18 @@ report: worst path to `sys_rdata` −10.035 ns → +1.892 ns, design WNS −10.0
 | `0x044` | 17 | `sf_jumpB` | RW | 14 | s | -8192..8191 | 0 | Same for `ctrl_B`. |
 | `0x048` | 18 | `sf_config` | RW | 5 | u | 0..31 | 0 | Step response: `[0]` start, `[1]` freeze PID A output, `[2]` freeze PID A integrator, `[3]` freeze PID B output, `[4]` freeze PID B integrator (during the step). |
 
-Note on `lock_trig_time` (v2.3.15): the counter and the comparator of `lock/lock_ctrl.v` are 32 bits (l. 86-88,
-120, 132); up to v2.3.14 they were 31 bits, so values ≥ 2³¹ aliased to `value − 2³¹` and the counter wrapped at
-17.2 s. Written through the bus (`/lock`, `c/lock`) the value is exact (3000000000 and 4294967295 read back
+Note on `lock_trig_time` (v2.3.15): the counter and the comparator of `lock/lock_ctrl.v` are 32 bits (l. 87-99,
+139, 151); up to v2.3.14 of lock_in+pid_harmonic they were 31 bits, so values ≥ 2³¹ aliased to `value − 2³¹` and the
+counter wrapped at 17.2 s. Since v2.0.3 (port of lock_in+pid_harmonic v2.3.23) the counter saturates at 2³²−1 instead
+of wrapping, and the time trigger (and the level after time) only fires while `cnt_ok` = 1: the counter measures the
+time from a floor of a ramp that has been running since then (cleared while the effective ramp enable or the ramp
+generator, `ramp_run`, is off; set at the next floor; l. 101-115). A request armed after the ramp was stopped waits
+for the next floor. Written through the bus (`/lock`, `c/lock`) the value is exact (3000000000 and 4294967295 read back
 unchanged on the board). The C controller keeps its parameters as `float` (`src/main.h`), so a value written
 from the web page goes through float32: it is converted to the register with saturation
-(`lock_float_to_u32()`, `src/lock.c` l. 35 and 140), but above 2²⁴ ticks (134 ms) it is rounded to the float32
+(`lock_float_to_u32()`, `src/lock.c` l. 38 and 232), but above 2²⁴ ticks (134 ms) it is rounded to the float32
 grid (steps of 2 to 256 ticks; error ≤ 128 ticks ≈ 1 µs at 34 s; e.g. "19 s" = 2375000000 → 2375000064). The
-read-back to the page is also a float (`src/lock.c` l. 287): 0xFFFFFFFF comes back as 2³², and the page clamps it
+read-back to the page is also a float (`src/lock.c` l. 369): 0xFFFFFFFF comes back as 2³², and the page clamps it
 to 4294967295 (v2.3.16). If the page later rewrites the lock registers it writes its rounded copy.
 
 ### Lock-in amplifier
@@ -176,7 +180,7 @@ Reset values: `lpf_sq` = `lpf_sqF` = 71 (2nd order, τ = 8.19 µs), `gen_mod_sqp
 | `0x0AC` | 43 | `ramp_B_factor` | RW | 14 | s | -4096..4096 (RTL: -8192..8191) | 4096 | Ratio `ramp_B / ramp_A`, 4096 = 1. |
 
 Ramp period: `T = (ramp_hig_lim − ramp_low_lim) · (ramp_step + 1) · 8 ns · (2 − ramp_sawtooth)`
-(`index.html` l. 1854, consistent with `gen_ramp.v`).
+(`index.html` l. 1890, consistent with `gen_ramp.v`).
 
 ### Inputs, outputs and monitor values
 
@@ -212,7 +216,7 @@ PID B is identical to PID A at offset `+0x34` (indices +13).
 | `0x110` / `0x144` | 68 / 81 | `pidX_in` | R | 14 | s | -8192..8191 | — | PID input (output of the selector). |
 | `0x114` / `0x148` | 69 / 82 | `pidX_out` | R | 14 | s | -8192..8191 | — | PID output **after** the lock enable (0 while the PID is disabled). |
 | `0x118` / `0x14C` | 70 / 83 | `pidX_ctrl` | RW | 3 | u | 0..7 | 0 | `[0]` integrator reset, `[1]` freeze output, `[2]` freeze integrator. |
-| `0x11C` / `0x150` | 71 / 84 | `ctrl_A` / `ctrl_B` | R | 14 | s | -8192..8191 | — | Control signal: `pidX_out + ramp_X + sf_jumpX` saturated to 14 bits (`lock.v` l. 265-270). Frozen by `read_ctrl[0]`. |
+| `0x11C` / `0x150` | 71 / 84 | `ctrl_A` / `ctrl_B` | R | 14 | s | -8192..8191 | — | Control signal: `pidX_out + ramp_X + sf_jumpX` saturated to 14 bits (`lock.v` l. 268-273). Frozen by `read_ctrl[0]`. |
 
 ### Streaming
 
@@ -263,7 +267,7 @@ Examples from the board with this App: `0x10A` = locked, PID A on, 1 lock; `0x20
 
 #### `trig_sw` (0x00C)
 
-`trigger_signals` in `lock.v` l. 333-341. The scope external trigger is a pulse of 8 ticks
+`trigger_signals` in `lock.v` l. 336-344. The scope external trigger is a pulse of 8 ticks
 (`lock/trigger_input.v`, N = 3) on every rising edge of `|(trigger_signals & trig_sw)`. The UI selects one
 bit at a time ("Ext Trig" in the Oscilloscope panel).
 
@@ -348,7 +352,7 @@ The labels are the ones of the UI (`index.html`) and of `reg_labels` in
 0 error, 1 sqXo, 2 sqYo, 3 sqFo, 4 signal_i, 5 Ramp A, 6 aux_A, 7 in1, 8 in2, 9 in1 − in2, 10 PID A out,
 11 PID B out (both before the enable), 12 ctrl_A, 13 ctrl_B, 14 Ramp B, 15 aux_B.
 
-`in1 − in2` is saturated to 14 bits (`sat14`, `lock.v` l. 508-509).
+`in1 − in2` is saturated to 14 bits (`sat14`, `lock.v` l. 522-523).
 
 ## Oscilloscope (0x40100000)
 
@@ -365,7 +369,7 @@ and `src/fpga.h`.
 | `0x08` | 2 | `ChAth` | RW | 14 | Trigger level of ch A (signed). |
 | `0x0C` | 3 | `ChBth` | RW | 14 | Trigger level of ch B (signed). |
 | `0x10` | 4 | `TrgDelay` | RW | 32 | Decimated samples written after the trigger. |
-| `0x14` | 5 | `Dec` | RW | **20** | Decimation, 1..1048575 (`osc.txt` since v2.3.15). The controller uses 1, 8, 64, 128, 256, 512, 1024, 8192, 65536, 524288 (`src/fpga.c` l. 509-545). RedPitaya: 17 bits. |
+| `0x14` | 5 | `Dec` | RW | **20** | Decimation, 1..1048575 (`osc.txt` since v2.3.15). The controller uses 1, 8, 64, 128, 256, 512, 1024, 8192, 65536, 524288 (`src/fpga.c` l. 541-577). RedPitaya: 17 bits. |
 | `0x18` | 6 | `CurWpt` | R | 14 | Current write pointer. |
 | `0x1C` | 7 | `TrgWpt` | R | 14 | Write pointer at the trigger. |
 | `0x20` | 8 | `ChAHys` | RW | 14 | Trigger hysteresis of ch A (the controller writes 0x3F). |
@@ -381,7 +385,7 @@ and `src/fpga.h`.
 
 Maximum time span of an acquisition: 16384 · 8 ns · Dec (0.131 ms at Dec 1, 68.7 s at Dec 524288).
 
-Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 244, `rp_scope_com.v` l. 194-207):
+Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 247, `rp_scope_com.v` l. 194-207):
 `[1:0]` = `osc_ctrl` (filter bypass), `[2]` = `stream_cmd[0]` (use the streaming decimation),
 `[19:3]` = `stream_rate`, `[20]` = end of streaming pulse.
 
@@ -393,7 +397,7 @@ Lock `osc_ctrl_w` → scope `osc_ctrl_i` (`lock.v` l. 244, `rp_scope_com.v` l. 1
   the map. See the differences below.
 - **Extension connector:** DIO0_P = external trigger input (bit 0 of `trig_sw`), DIO6_N = ramp direction
   output, DIO7_N = digital modulation output = `sq_ref` (TTL reference of the square generator,
-  `assign digital_modulation = sq_ref_b`, `lock.v` l. 581; it was always 0 in lock_in+pid_harmonic). Not measured on
+  `assign digital_modulation = sq_ref_b`, `lock.v` l. 595; it was always 0 in lock_in+pid_harmonic). Not measured on
   the board: a confirmar. If CAN is enabled in the
   housekeeping, DIO6_N/DIO7_N go back to CAN TX (`red_pitaya_top.sv` l. 539-546).
 
@@ -413,7 +417,7 @@ The previous `doc/README.md` (a copy of `lock.txt` as a table) was replaced by t
 
 Checked against `lock.v`, `lock/*.v`, `red_pitaya_top.sv`, `rp_scope_cfg.v`, `rp_scope_com.v`,
 `src/fpga.h`, `src/fpga_lock.h` (docAgent, 2026-10-12, v2.0.0: the 91 offsets of the bus decoder of `lock.v`
-l. 1023-1113 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the tables above). The tables above follow the RTL. Reported to devAgent (see
+l. 1050-1140 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the tables above). The tables above follow the RTL. Reported to devAgent (see
 `docAgent.md`); rows 1-6 and 8 were fixed in v2.3.15 (history of lock_in+pid_harmonic, kept here: the line numbers and offsets of this table are the ones of that App).
 
 | # | File | Item | File says | RTL does |
@@ -425,9 +429,9 @@ l. 1023-1113 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the
 | 5 | `c/lock.txt` | `rl_state` | read-only 0..31 | constant 0 (`lock.v` l. 133). **Fixed in v2.3.15** (0..0) |
 | 6 | `c/lock.txt` | `lock_trig_time` max | 4294967295 | only bits `[30:0]` were compared (`lock_ctrl.v`). **Fixed in v2.3.15**: 32-bit counter and comparator |
 | 7 | `c/lock.txt` | `pidX_SAT` | 0..13 | 14-bit register, only `[7:0]` used; consistent in practice |
-| 8 | `lock.v` / `src/fpga_lock.h` comments | `X_28` / `Y_28` | "from sin_ref" / "from cos_ref" | X from `cos_ref`, Y from `sin_ref` (`lock.v` l. 768-769). **Fixed in v2.3.15** |
+| 8 | `lock.v` / `src/fpga_lock.h` comments | `X_28` / `Y_28` | "from sin_ref" / "from cos_ref" | X from `cos_ref`, Y from `sin_ref` (`lock.v` l. 791-792). **Fixed in v2.3.15** |
 | 9 | `lock.v` / `fpga_lock.h` comments | `ctrl_B` | "pidA_out + ramp_B" | `pidB_out + ramp_B + sf_jumpB`. **Fixed in v2.3.18** |
 | 10 | `src/fpga.h` comment | `data_dec` | "bits [16:0]" | 20 bits. **Fixed in v2.3.18** |
 | 11 | `fpga/README.md` | scope decimation | "17-bit decimation (max 64k)" | 20 bits (max 512k). **Fixed in v2.3.18** (`fpga/README.md` l. 67) |
 | 12 | `index.html` | *Slow outputs* selectors | options `sin_ref`, `cos_ref`, `cos_1f..3f` (labels of lock_in+pid_harmonic) | the selectors have no register and no effect in this App (see [Other blocks](#other-blocks)); the RTL muxers `slow_out3/4_sw_m` list `sq_ref`, `sqXo`... Cosmetic, reported to devAgent (v2.0.0) |
-| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1587); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |
+| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1623); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |

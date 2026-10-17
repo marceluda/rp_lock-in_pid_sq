@@ -1,7 +1,7 @@
 # Red Pitaya Square Lock-in+PID Application (SQUARE modulation up to 31.25 MHz)
 
 "Square Lock-in+PID" (`lock_in+pid_square`) is the [Harmonic Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid_h)
-App (v2.3.18, branch `devel2.0`) with the harmonic modulation replaced by **square modulation** like the one of the
+App (v2.3.18; the later fixes of that App up to v2.3.24 were ported, see below) with the harmonic modulation replaced by **square modulation** like the one of the
 original [Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid) App: a square local oscillator with reference
 and quadrature outputs up to **31.25 MHz** (125 MHz / 4) and a square lock-in (multiplication by ±1), while keeping
 every feature of the harmonic App: modulation added to the control signals (`ctrl_A` / `ctrl_B` on OUT1 / OUT2),
@@ -15,10 +15,10 @@ loop, controlled from a web page or remotely over HTTP.
 
 ![Lock captured with the square lock-in at 50 kHz: ctrl_A (blue) and error = sqYo (red), t = 0 at the lock (v2.0.0)](.README/sq_lock_captured_v2.0.0.jpg)
 
-**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0`, `v2.0.1`, `v2.0.2`).
+**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0` .. `v2.0.4`).
 
 
-## Version 2.0.0 (Ecosystem 2.0)
+## Version 2.0.x (Ecosystem 2.0)
 
 Current version: **2.0.4** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya

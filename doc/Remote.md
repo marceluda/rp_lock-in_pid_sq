@@ -1,6 +1,6 @@
 # Remote control
 
-How to control `lock_in+pid_square` **v2.0.0** from a program, without the web page. The registers are
+How to control `lock_in+pid_square` **v2.0.4** (branch `master`) from a program, without the web page. The registers are
 described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.md).
 
 The HTTP API, the C tools and the Python client are the ones of `lock_in+pid_harmonic` v2.3.18 with the names and
@@ -500,6 +500,10 @@ Notes:
 - `lock_trig_time` is 32 bits unsigned since v2.3.15 (up to 34.36 s; before, values ≥ 2³¹ aliased). Written
   through `/lock` the value is exact; written from the web page it is rounded to float32 above 2²⁴ ticks
   ([FPGA.md](FPGA.md#lock-control-auto-lock), note on `lock_trig_time`).
+- Since v2.0.3 (FPGA) the time trigger only counts from a scan floor of a ramp that kept running: a Trigger Lock
+  armed right after a release or with the ramp stopped waits for the next floor and fires at floor + time (before,
+  it could fire in the middle of the scan). The `time=16.58e-3` / `timeout=10` of the examples are for the 64 ms
+  scan of the test configuration; with slow ramps use a timeout longer than the period.
 - On the board, `python3 py/lock_from_registers.py --trig time --time 16.58ms --set pidA` does the same
   (with `--status`, `--release`, `--now`, `--force`, `--sw`); tested with this App: LOCKED in 0.006 s, `--time 40s`
   clamped to 4294967295 and shown by the page as "T = 34.360 s" (`reportes/lock-in_pid_sq.md` step 5).
