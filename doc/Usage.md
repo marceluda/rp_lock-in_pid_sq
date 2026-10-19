@@ -251,6 +251,15 @@ How the lock control works inside: [`lock_control.md`](../lock_in+pid_square/doc
 
 - **Trigger**: *Source* (Channel 1, Channel 2, External), *Mode* (Auto, Normal, Single), *Edge*, *Level*,
   and the *Single* button. External uses the *Ext Trig* of the Oscilloscope panel.
+  **Auto** (since v2.0.5) waits for the trigger as *Normal* does (the *Level* of the source channel, or the
+  *Ext Trig* with Source = External) and forces an acquisition only when no trigger comes within a time limit:
+  the largest of 0.25 s, 1.1 × the window + 50 ms and, when the period of the Ext Trig is known (Scan floor /
+  Scan ceil with the scan running, Square mod.), 1.1 × that period + 50 ms; at most 80 s. So with Ext Trig = Scan
+  floor, t = 0 is the scan floor in Auto too (a 30 s scan in a 0…29.4 s window waits up to 33 s and every scan is
+  acquired from its floor), and without a trigger (scan stopped or locked with the ramp off, Ext Trig None, a level
+  the signal never crosses) the traces keep coming: every 0.25 s plus the acquisition for short windows. As before,
+  an Auto acquisition starts at the trigger (no negative times). Up to v2.0.4 Auto triggered at once, at any phase
+  of the scan (Scan floor seemed to trigger at the ceiling). The *Level* field and line work in Auto too.
 - **Range**: buttons for the X and Y scales and offsets (X+ up to 68.7 s).
 - **Measure**: min, max, amplitude, average, frequency and period of each channel.
 - **Gain settings**: probe attenuation (1x/10x) and LV/HV jumper setting of each input (scale of the display).
@@ -502,8 +511,12 @@ instead of sqYo (not tried with the loop closed). The configuration `lock_mode` 
 - The list shows the saved configs with *del*, *download* and *load*. *Load file* adds a JSON file to the list
   (then press its *load*). The test configuration `test_files/lock_in+pid_square__lock_mode.json` (Apps folder) is
   such a file.
-- **Don't turn on PIDs and Ramp on config loading**: when checked, a loaded config never turns on the
-  ramp, the PIDs or a lock request (safe default when the outputs are connected to an experiment).
+- **Don't turn on PIDs and Ramp on config loading**: **unchecked by default** (since v2.0.5; up to 2.0.4 it was
+  checked). Unchecked, *load* (also of a *Load file*) sets the ramp (*Scan enable* and the Lock Control ramp
+  enable) and the PIDs as they are in the config: a config saved while scanning loads scanning. Checked, a loaded
+  config never turns them on (useful when the outputs are connected to an experiment). The same option applies to
+  the restore of the tab state after a start / *Restart*. A lock request (*Lock Now*, *Trigger Lock*) is never
+  loaded. The option is not saved: every page load starts with it unchecked.
 - Configs are per browser, not stored on the board.
 - A load sends the whole config (148 keys in 5-9 POST in the test) except the read-only values, applies the time
   window of the config in the units it was saved with, and ends a frozen lock capture.
