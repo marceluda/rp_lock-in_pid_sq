@@ -1,6 +1,6 @@
 {
     "name": "Square Lock-in+PID",
-    "version": "2.0.5-BUILD_NUMBER",
+    "version": "2.0.6-BUILD_NUMBER",
     "revision": "REVISION",
     "description": "A toolkit application for lock-in and PID implementation. Includes: Oscilloscope, square-wave Lock-in (phase and quadrature up to 31.25 MHz) with internal modulation generator, Two enhanced PIDs, Ramp generator and control tools."
 }

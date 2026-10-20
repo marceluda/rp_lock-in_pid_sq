@@ -38,8 +38,9 @@ here), the rest is identical. Their captions say so.
 
 Install the App (see the [README](../README.md#installation)) and open
 `http://rp-XXXXXX.local/lock_in+pid_square/` (or choose *Square Lock-in+PID* in the main menu of the Red Pitaya).
-The page starts the App (loads the FPGA and the C controller) and restores the state of the previous session of the
-same browser tab. Use a single tab per board (see [Several clients and Restart](#several-clients-and-restart)).
+The page starts the App (loads the FPGA and the C controller) and restores the last settings used in this browser (any tab) when **Load last config on init** is checked
+(default, Config dialog, since v2.0.6); unchecked, the App starts with its default parameters (see [Saving and loading
+configurations](#saving-and-loading-configurations)). If the App is already running (e.g. another tab), the page shows its current state. Use a single tab per board (see [Several clients and Restart](#several-clients-and-restart)).
 
 After loading, the FPGA has its reset values: square generator at **31.25 MHz** (`gen_mod_sqp` = 1), modulation off on
 both outputs (`mod_out1` = `mod_out2` = −1), OUT1 = OUT2 = 0, lock-in filters 8 µs 2nd order, gains ×1, ramp off
@@ -50,8 +51,8 @@ both outputs (`mod_out1` = `mod_out2` = −1), OUT1 = OUT2 = 0, lock-in filters 
 ## Layout of the page
 
 - **Top toolbar**: zoom and acquisition buttons.
-- **Left column**: the instruments (Oscilloscope, Outputs, Lock-in modules, Ramp Controller, PIDs modules,
-  Lock Control, Streaming). Each title opens or closes its panel.
+- **Left column**: the instruments (Oscilloscope, Outputs, Lock Control, Lock-in modules, Ramp Controller, PIDs
+  modules, Streaming; Lock Control is below Outputs since v2.0.6). Each title opens or closes its panel.
 - **Centre**: the plot (two Y axes, Channel 1 blue and Channel 2 red), the mouse position, and the
   **Square Lock-in** display (sqX, sqY, R, φ, sqF), opened with its title.
 - **Right column**: the original scope controls (Trigger, Range, Measure, Gain settings) and the Monitor.
@@ -515,9 +516,19 @@ instead of sqYo (not tried with the loop closed). The configuration `lock_mode` 
   checked). Unchecked, *load* (also of a *Load file*) sets the ramp (*Scan enable* and the Lock Control ramp
   enable) and the PIDs as they are in the config: a config saved while scanning loads scanning. Checked, a loaded
   config never turns them on (useful when the outputs are connected to an experiment). The same option applies to
-  the restore of the tab state after a start / *Restart*. A lock request (*Lock Now*, *Trigger Lock*) is never
+  the restore of the last config / tab state after a start / *Restart*. A lock request (*Lock Now*, *Trigger Lock*) is never
   loaded. The option is not saved: every page load starts with it unchecked.
 - Configs are per browser, not stored on the board.
+- **Load last config on init** (since v2.0.6): **checked by default**; the choice is kept in the browser
+  (`localStorage`, key of this App). The page saves the current settings automatically every ~2 s (the *last
+  config*, also in `localStorage`). Checked, each time the page starts the App (main menu, new tab, F5) it restores
+  the last config; unchecked, the App starts with its defaults. The ramp / PIDs of the restored config follow the
+  option above; a lock request is never restored.
+- **Load last config** / **Reset to defaults** (since v2.0.6): close the dialog and restart the App (the page reloads,
+  the FPGA is reloaded: outputs and lock are reset) with the last config / with the default parameters of the App (as
+  a fresh start: lock open, ramp stopped, PID gains 0), whatever the checkbox says. After *Reset to defaults* (or an
+  open with the box unchecked) the last config is kept until a parameter is changed, so *Load last config* brings it
+  back.
 - A load sends the whole config (148 keys in 5-9 POST in the test) except the read-only values, applies the time
   window of the config in the units it was saved with, and ends a frozen lock capture.
 
@@ -535,7 +546,7 @@ App) takes the board, the page stops polling and shows a dialog:
 
 ![Another client took control (lock_in+pid_harmonic, same dialog)](.Usage/restart_modal.jpg)
 
-*Restart* restarts the App and restores the state of this tab (if the other client loaded the same App,
+*Restart* restarts the App and restores the state of this tab (with *Load last config on init* checked or not) (if the other client loaded the same App,
 the FPGA is not reloaded). With this App a `bazaar?stop` from outside was detected, and the page relaunched the App
 and restored its registers and the streaming IP in 7.8 s (`reportes/lock-in_pid_sq.md` step 6). On Ecosystem 2.0
 the page also enters a "cautious mode" when the board answers slowly, and waits until it answers fast again.
