@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.x (Ecosystem 2.0)
 
-Current version: **2.0.6** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.7** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -53,6 +53,10 @@ Current version: **2.0.6** (branch `master`). The major number 2 marks, as in th
   browser): the App opens with the last settings used in this browser (also in a new tab); unchecked, it opens with its
   defaults. Buttons **Load last config** and **Reset to defaults** restart the App with them. The **Lock Control**
   panel is now right below Outputs.
+- 2.0.7 (from lock_in+pid_harmonic 2.3.28): **Lock Control**: three small buttons **time** / **level** /
+  **time+level** between Trigger Lock and Lock Now: one click on a button and one on the graph set the trigger type and
+  value and fire Trigger Lock. Fixed: a click with Choose from graph + Fire on click during a POST in flight lost the new
+  values or the re-lock.
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
 and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
