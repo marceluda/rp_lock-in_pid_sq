@@ -64,7 +64,19 @@ Ext Trig (*Square mod.*, one period of the square modulation in Reset zoom) and 
   `config_load_window_sim`, `lock_capture_ui_sim`, `lock_ctrl_ui_sim`, `osc_presets_sim` take the `[FORCEX]` block. All
   16 node sims pass.
 - Pending (as in pid_plus 2.2.0): *Ramp hig / low lim* do not take mV / V; the wheel over *Ramp period* does not move
-  the step above $2^{24}$ (float32). Board test (testAgent) pending.
+  the step above $2^{24}$ (float32).
+- Board test (testAgent, RP2, package 2.0.10-20, 2026-11-13; `reportes/lock-in_pid_sq/2026-11-13_1503_v2010.md` in the
+  Apps folder): **PASS**. Installed with `upload_app.sh` (36 files equal to the package). Tabs (*freq* opened with the
+  defaults: 6250 Hz, step 0; tab kept after a reload), *freq* tab (100 Hz → step 77, 100.1603 Hz; wheel 1/10/100/1000
+  Hz; `2.5 kHz`, `500 mHz`, `500 mV`, `0.1 V`), *Ramp period* `10 ms` → 77 (triangle) / 155 (sawtooth), clamp
+  2147483520, no "-0 mV", no tooltips, Lock osc. screen (0 … 4.992 ms in triangle, 0 … 9.985 ms in sawtooth, zoom →
+  limits as the model, 0.2 Hz continuous update, Single turns it off; values identical to lock_in+pid_harmonic
+  2.3.31), Reset zoom 9.984 / 4.992 / 9.984 / 4.992 / 9.984 ms, Force X 10/10; Reset zoom with **Square mod.** still one
+  period of the square modulation, without alternating (`gen_mod_sqp` 1 → 0 … 0.032 µs, 49 → 0 … 0.8 µs), title of
+  the button with the new sentence; no console errors. Regression: LOCK MODE at **31.25 MHz**
+  (`lock_in+pid_square__lock_mode_31MHz.json`) LOCKED, error $-0.04 \pm 0.69$ mV, ctrl_A $7.02 \pm 0.19$ mV, IN1
+  $0.250 \pm 0.057$ V, as the reference of 2026-10-12.
+- Documentation (`doc/*.md`, README) updated for v2.0.10 in the commit that carries the tag `v2.0.10`.
 
 ## v2.0.9 - 2026-10-24 - AUTO trigger level at the middle of the signal with a calibration offset or a full scale other than 1 V; Raw Mode half counts (C controller; page: version and comments only; no FPGA change; as lock_in+pid_harmonic 2.3.30)
 

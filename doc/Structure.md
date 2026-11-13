@@ -1,6 +1,6 @@
 # Internal structure
 
-How `lock_in+pid_square` v2.0.4 (branch `master`) is built: the three layers (web page, server, FPGA), how they talk, and
+How `lock_in+pid_square` v2.0.10 (branch `master`) is built: the three layers (web page, server, FPGA), how they talk, and
 how the instruments are connected inside the FPGA. Registers: [FPGA.md](FPGA.md). Specifications:
 [App.md](App.md). Source tree and build: [Devel.md](Devel.md).
 
@@ -10,6 +10,7 @@ the generator, the lock-in, the selectors and the register offsets from `0x054` 
 
 - [Layers](#layers)
 - [Web page ↔ server](#web-page--server)
+  - [Time window of the plot and Force X](#time-window-of-the-plot-and-force-x)
 - [Server ↔ FPGA: the C controller](#server--fpga-the-c-controller)
 - [Inside the FPGA](#inside-the-fpga)
   - [Top level](#top-level)
@@ -83,6 +84,64 @@ saved in `localStorage` (key `lockConfig_lock_in+pid_square`). A Config → load
 `time_units`, `time_range`, `gui_xmin`, `gui_xmax`), and takes the window and units of the answer of the last
 chunk (`configLoadApplyX()`, v2.3.17).
 
+Ramp Controller (v2.0.10, page only, port of `lock_in+pid_harmonic` 2.3.31, which ports it from `lock_in+pid_plus`
+2.2.0): the tabs *period* / *freq* and *Lock osc. screen* are the `[RAMP CALC]` (pure functions: period, frequency,
+f → step, amplitude / offset ↔ limits, zoom → limits; also run by `test/ramp_ui_sim.js`) and `[RAMP UI]` blocks of
+`index.html` (l. 3425-3651 and 3653-3963; the period of the ramp, `rampPeriodCycles()`, is in `[TRIG FROM GRAPH]`,
+l. 3227, and the windows of *Reset zoom* / *Lock osc. screen*, `resetZoomWindow()` and the whole / half cycle
+`resetZoomCycleNext()`, in `[RESET ZOOM]`, l. 3312-3423, with `sqPeriodCycles()` for Ext Trig = Square mod., l. 3334).
+They only write the existing parameters `lock_ramp_step`, `lock_ramp_low_lim`, `lock_ramp_hig_lim` (one POST) and, for
+*Lock osc. screen*, the scope parameters `trig_source`, `trig_mode`, `lock_trig_sw` and the time window (`xmin` /
+`xmax`), as *Reset zoom* does. Their state (active tab in `localStorage` key `lockin_ramp_tab_lock_in+pid_square`,
+l. 3662; `ramp_ls`, `ramp_f_nominal`) is not part of the parameters nor of the configs. No change in the controller
+nor in the FPGA ([Usage.md](Usage.md#ramp-controller)). The *Ramp period* field is a text field whose parser is in
+`input_unit_parsers` (l. 2393-2396, `rampStepParseField()` → `rampParseStep()`), like the *Time trigger* / *Level
+trigger* fields and the *Half period* / *Phase* of the square oscillator (added to the same map at l. 2466-2467).
+
+### Time window of the plot and Force X
+
+The time window of the scope is a pair of parameters, `xmin` / `xmax`, in the **time units** of the server
+(`time_units`: 0 µs, 1 ms, 2 s), which follow the decimation (`time_range`) that the controller chooses for the window
+(`transform_acq_params()`, `src/main.c` l. 646). When a POST changes the units (e.g. a window of 0 … 2 s followed by a
+*Reset zoom* to 0 … 9.984 ms), the controller converts the window to the new units and raises **`forcex_flag`**
+(`src/main.c` l. 103-108, set at l. 789-812): the page must put its X axis on the `xmin` / `xmax` of the server. The
+flag stays 1 in the answer of that POST **and in every `GET /data`** until the page sends the next POST: one that
+only sends the window back (`rp_set_params()`, l. 984-988), or a scope change whose window is within a factor 33 of
+the forced one or comes more than 1.5 s after it (`FORCEX_STALE_MS`, l. 460, 690-692).
+
+Up to v2.0.9 the page applied the forceX of every GET. A GET that was in flight when the page set a new window
+(the second click of *Reset zoom*, 0 … T/2) brought ~70 ms later the window of the first click; and the repeated flag
+undid a wheel / box zoom made from t = 0 during the 250 ms before its POST (found on `lock_in+pid_plus` 2.2.0-rc3,
+2 of 4 tries). Since **v2.0.10** the `[FORCEX]` block (`index.html` l. 326-353) filters it:
+
+| Piece | Where | What it does |
+|---|---|---|
+| `xwin_gen` / `xWindowLocal()` | l. 340-342 | counter of "the page touched the X window": +1 in `lockSetXWindow()` (l. 4042-4043, used by Reset zoom, Lock osc. screen, Capture Lock), `xWindowToParams()` (l. 5106-5107), X± (l. 547), the X offset buttons (l. 616), the X zoom of the wheel (l. 5155), and at the start (l. 5910) and at the answer (l. 5933) of every POST |
+| `get_xgen` | l. 4806 | value of `xwin_gen` when a `GET /data` starts (as `get_epoch` = `plot_epoch` for the data, v2.0.3) |
+| `getForceXApply(p, get_epoch, get_xgen)` | l. 345-352, used at l. 4905 | the forceX of a GET answer is applied only if `forcex_flag` = 1, the GET started after the last Reset zoom was answered (`get_epoch === plot_epoch`), nothing touched the X window nor sent / got a POST since the GET started (`get_xgen === xwin_gen`), and its window (`xmin`, `xmax`, `time_units`: `forceXKey()`) is not the one of the last forceX applied |
+| `forcex_last` | l. 341; set at l. 5960 | the forceX of a POST answer is applied as before and remembered, so the GETs that repeat it do not apply it again |
+
+`plot_epoch` alone (v2.0.3) was not enough: it moves only with Reset zoom and Lock osc. screen, not with the box,
+the wheel or X±. A forceX that is not stale (e.g. another client sets 0 … 2 s and the units change) still reaches
+the page, once. Checked by `test/forcex_race_sim.js` (7/7; with `--old` on v2.0.9: 4/6) and on RP2 (report
+`reportes/lock-in_pid_sq/2026-11-13_1503_v2010.md`, Apps folder: 10/10 second clicks of Reset zoom from an axis in
+seconds, waiting 0 … 12 s between the clicks, stayed at 0 … 4.992 ms also 6 s later; a SHIFT + wheel zoom from t = 0
+right after a forceX and a box from the left edge stayed 6 s). No change in the controller.
+
+```mermaid
+sequenceDiagram
+  participant P as page (index.html)
+  participant S as controller (main.c)
+  P->>S: POST xmin/xmax (click 1: 0..9.984 ms, from s)
+  S-->>P: answer: forcex_flag 1, 0..9.984 ms (applied, forcex_last)
+  Note over P: GET /data starts (get_xgen = n)
+  P->>P: click 2: lockSetXWindow(0..4.992 ms), xwin_gen = n+1
+  S-->>P: GET answer: forcex_flag 1, 0..9.984 ms (repeated)
+  Note over P: get_xgen != xwin_gen and key = forcex_last: not applied
+  P->>S: POST 0..4.992 ms
+  S-->>P: answer: forcex_flag 0
+```
+
 ## Server ↔ FPGA: the C controller
 
 `src/` builds `controllerhf.so`, the standard interface of a Red Pitaya App (`rp_app_init`,
@@ -113,7 +172,7 @@ flowchart TB
 - **Full 32-bit registers** written from the page through float parameters: `lock_trig_time`, `lock_trig_val`,
   `lock_trig_sw` (v2.3.18) and, in this App, the square generator `gen_mod_sqp` and `gen_mod_phase_sq`
   (`src/lock.c` l. 156-161 and 295-310, `lock_sq_known`): they are written **only when the parameter changes**, and a
-  value written from outside (`/lock`, Python) is copied to the parameter and kept, so a value above 2²⁴ written
+  value written from outside (`/lock`, Python) is copied to the parameter and kept, so a value above $2^{24}$ written
   exactly from Python is not replaced by its float32 rounding when the user changes another parameter in the page
   (tested on the board: `gen_mod_sqp` = 16789561 kept after changing the phase and the gain in the page).
 - **`lock_update_main()` / `lock_update_status()`** (l. 410, 547) read the registers back (read-only values,
@@ -235,7 +294,7 @@ Main points (with the lines of `lock.v`):
   to 14 bits in two registered steps. sqX (from `sq_ref`) and sqY (from `sq_quad`) share `lpf_sq`/`sg_amp_sq`; sqF
   (from `sq_phas`) has `lpf_sqF`/`sg_amp_sqF`. All this chain is registered and meets timing.
 - **Error** (l. 542-568): one of 0, sqXo, sqYo, sqFo, signal_i, in2, in1, in1−in2, minus `error_offset`; its mean
-  and square are accumulated over 2²⁷ ticks for the Monitor.
+  and square are accumulated over $2^{27}$ ticks for the Monitor.
 - **PIDs** (l. 879-972): each PID takes a signal (`pidX_sw`), computes P, I, D (`lock_pid_block.v`) and its
   output is forced to 0 (and the integrator reset) when the lock control disables it.
 - **Control signals** (l. 265-273): `ctrl_A = pidA_out + ramp_A + jumpA`, `ctrl_B = pidB_out + ramp_B + jumpB`,

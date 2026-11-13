@@ -1,7 +1,7 @@
 # Red Pitaya Square Lock-in+PID Application (SQUARE modulation up to 31.25 MHz)
 
 "Square Lock-in+PID" (`lock_in+pid_square`) is the [Harmonic Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid_h)
-App (v2.3.18; the later fixes of that App up to v2.3.24 were ported, see below) with the harmonic modulation replaced by **square modulation** like the one of the
+App (v2.3.18; the later fixes of that App up to v2.3.31 were ported, see below) with the harmonic modulation replaced by **square modulation** like the one of the
 original [Lock-in+PID](https://github.com/marceluda/rp_lock-in_pid) App: a square local oscillator with reference
 and quadrature outputs up to **31.25 MHz** (125 MHz / 4) and a square lock-in (multiplication by ±1), while keeping
 every feature of the harmonic App: modulation added to the control signals (`ctrl_A` / `ctrl_B` on OUT1 / OUT2),
@@ -15,12 +15,12 @@ loop, controlled from a web page or remotely over HTTP.
 
 ![Lock captured with the square lock-in at 50 kHz: ctrl_A (blue) and error = sqYo (red), t = 0 at the lock (v2.0.0)](.README/sq_lock_captured_v2.0.0.jpg)
 
-**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0` .. `v2.0.4`).
+**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0` .. `v2.0.10`).
 
 
 ## Version 2.0.x (Ecosystem 2.0)
 
-Current version: **2.0.10** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.10** (branch `master`; package `archive/lock_in+pid_square-2.0.10-20-devbuild`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -67,15 +67,21 @@ Current version: **2.0.10** (branch `master`). The major number 2 marks, as in t
 - 2.0.10 (from lock_in+pid_harmonic 2.3.31 / lock_in+pid_plus 2.2.0, web page only): **Ramp Controller** with tabs
   *period* / *freq* (Frequency in Hz with the nearest reachable value, Amp. p-p / Offset), *Ramp period* in s / ms (whole
   period), *Lock osc. screen* (scope locked on the ramp: rising half of a triangle, the time zoom sets the ramp limits),
-  *Reset zoom* alternating whole period / rising half (Scan floor, triangle), no stale *Force X* of `GET /data`.
+  *Reset zoom* alternating whole period / rising half (Scan floor, triangle; with Ext Trig = Square mod. it still gives
+  one period of the square modulation), no stale *Force X* of `GET /data`; the four ramp checkboxes in two columns, no
+  "-0 mV" labels. Same FPGA and C sources as v2.0.9; tested on RP2, also a lock at 31.25 MHz. See
+  [doc/Usage.md](doc/Usage.md#ramp-controller) and [doc/App.md](doc/App.md#ramp-generator-scan).
+
+![Ramp Controller of v2.0.10: tab freq (100 Hz triangle, Amp. p-p 8000) and Lock osc. screen: the scope on Scan floor with the window 0 … T/2, the rise of Ramp A (red)](.README/ramp_controller_lock_osc_screen_v2.0.10.jpg)
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
 and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
 31.25 MHz** against a simulated peak (50 kHz: 5/5, same lock point as the harmonic App; 31.25 MHz: 4/4, 70 s locked
 with Time and Level trigger, same point of the peak; it needs a system under test with enough bandwidth, see
 [doc/Usage.md](doc/Usage.md#5-working-at-3125-mhz)), HTTP remote control (`example_usage.py` 15/15), streaming
-at 976 kS/s. The FPGA timing does not close in paths inherited from the harmonic
-App (WNS −9.3 ns), while the new square blocks do; the App works. The icon is provisional (the harmonic one).
+at 976 kS/s. The FPGA timing of v2.0.0 did not close in paths inherited from the harmonic App (WNS −9.3 ns);
+v2.0.1 pipelined them (WNS −0.657 ns, CHANGELOG v2.0.1). The App has its own icon since v2.0.2. The later versions
+were tested on RP2 too (v2.0.10: Ramp Controller and a lock at 31.25 MHz, see the CHANGELOG).
 Details: [doc/App.md](doc/App.md) and the [CHANGELOG](CHANGELOG.md).
 
 
@@ -85,7 +91,8 @@ Details: [doc/App.md](doc/App.md) and the [CHANGELOG](CHANGELOG.md).
 - in-phase and quadrature demodulation (sqX, sqY), and demodulation with an adjustable delay (sqF)
 - Square modulation from 0.029 Hz to 31.25 MHz (reference and quadrature), added to the outputs
 - Two PID filters, for loop back stabilization
-- Ramp/Scan controller for response analysis
+- Ramp/Scan controller for response analysis, set by period or by frequency / amplitude / offset, with a *Lock osc.
+  screen* mode that turns a zoom of the scope into new scan limits
 - Lock control for automatic scan-stop / PID start (time, level or immediate trigger, run by the FPGA)
 - Two-channel oscilloscope on any internal signal, triggered by internal events (scan floor, lock, ...)
 - Streaming system for continued acquisition of two channels

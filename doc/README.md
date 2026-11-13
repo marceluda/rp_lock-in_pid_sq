@@ -1,12 +1,22 @@
 # RP Square Lock-in+PID — documentation
 
-Documentation of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.4** (branch `master`, Ecosystem 2.0, FPGA built
-with Vivado 2020.1), derived from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`) with the later fixes
-of that App ported up to its v2.3.24. All the pages describe this App;
-data measured on the board come from the tests of 2026-10-12 (builds 2.0.0-5 and 2.0.0-6) and the screenshots of
-2026-10-16 (2.0.4-13), and the values inherited
+Documentation of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.10** (package 2.0.10-20, branch `master`,
+Ecosystem 2.0, FPGA built with Vivado 2020.1; the FPGA is the one of v2.0.3 … v2.0.9, v2.0.10 changes only the web
+page), derived from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`) with the later changes of that App
+ported up to its v2.3.31. All the pages describe this App;
+data measured on the board come from the tests of 2026-10-12 (builds 2.0.0-5 and 2.0.0-6), the screenshots of
+2026-10-16 (2.0.4-13) and the test of 2026-11-13 (2.0.10-20), and the values inherited
 from the harmonic App that were not measured again say so. Back to the [project README](../README.md) ·
 [CHANGELOG](../CHANGELOG.md).
+
+New in v2.0.10 (the Ramp Controller of `lock_in+pid_plus` 2.2.0, through `lock_in+pid_harmonic` 2.3.31): the *Ramp
+Controller* of the web page sets the ramp by period (steps, or the whole period in `s` / `ms`) or by frequency /
+amplitude / offset, and *Lock osc. screen* shows the rising half of a triangle (one period of a sawtooth) and turns a
+time zoom of the scope into new ramp limits: [Usage.md](Usage.md#ramp-controller), formulas in
+[App.md](App.md#ramp-generator-scan). *Reset zoom* with Scan floor and a triangle alternates whole period / rising half
+(with Square mod. it still gives one period of the modulation;
+[Usage.md](Usage.md#reset-zoom-whole-period--rising-half)); the *Force X* of the server is applied once
+([Structure.md](Structure.md#time-window-of-the-plot-and-force-x)).
 
 | Document | Contents |
 |---|---|

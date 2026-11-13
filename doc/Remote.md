@@ -1,6 +1,7 @@
 # Remote control
 
-How to control `lock_in+pid_square` **v2.0.4** (branch `master`) from a program, without the web page. The registers are
+How to control `lock_in+pid_square` **v2.0.10** (branch `master`; nothing of the remote control changed in v2.0.10, which only
+changes the web page) from a program, without the web page. The registers are
 described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.md).
 
 The HTTP API, the C tools and the Python client are the ones of `lock_in+pid_harmonic` v2.3.18 with the names and
@@ -49,7 +50,7 @@ The whole HTTP remote control (registers, scope acquisitions, PID, ramp, square 
 Ecosystem 2.0. With this App it was tested on RP2 (2.0.0-5 and 2.0.0-6, `reportes/lock-in_pid_sq.md` step 5):
 `example_usage.py` cell by cell up to the streaming cell, **15/15 cells OK, 0 warnings** (frequencies 10 kHz,
 31.25 MHz and 50 kHz, phase 90°, filters, `get_XY`, PID, ramp, lock by time / level / now and release), exact
-writes above 2²⁴ through `/lock`, and `py/lock_from_registers.py` on the board. The code common with
+writes above $2^{24}$ through `/lock`, and `py/lock_from_registers.py` on the board. The code common with
 lock_in+pid_harmonic was also tested there in v2.3.15-2.3.18 (`reportes/lock-in_pid_h.md`).
 
 ## HTTP API
@@ -103,7 +104,7 @@ of this App differ from lock_in+pid_harmonic from `0x054` on: always address reg
 
 **Reading live signals.** Up to v2.3.16, about 2-3 % of the bus reads of a signal that changes on every clock
 (`in1` while it crosses zero, `oscA` showing `in1`) returned 32 bits of garbage (e.g. `0x0118c9c1`), out of the
-14-bit range. This App has the fix of v2.3.17 from the start: the reads are exact (0 bad reads in 8·10⁶ dense
+14-bit range. This App has the fix of v2.3.17 from the start: the reads are exact (0 bad reads in $8\cdot 10^{6}$ dense
 reads on the board with lock_in+pid_harmonic v2.3.17, `reportes/lock-in_pid_h.md`; cause and fix in
 [FPGA.md](FPGA.md#lock-module-0x40600000)). The value
 read is the one of the clock before the read (one more clock of latency, bus reads only).
@@ -349,7 +350,7 @@ this App (`control_finn.py` l. 1205-1415):
 | Method | What it does |
 |---|---|
 | `rp.set_signal(sw)` | lock-in input `signal_sw` (`'in1'`, `'in2'`, `'in1-in2'`, `'sq_ref'`, `'sq_quad'`, `'sq_phas'`, `'aux_A'`, `'Ramp A'`) |
-| `rp.set_freq(val)` | writes `gen_mod_sqp` (0..2³²−1): f = 125 MHz / (2·(val + 1)); 0 → 62.5 MHz (no quadrature), 1 → 31.25 MHz, 1249 → 50 kHz. Returns f in Hz |
+| `rp.set_freq(val)` | writes `gen_mod_sqp` (0..$2^{32}-1$): f = 125 MHz / (2·(val + 1)); 0 → 62.5 MHz (no quadrature), 1 → 31.25 MHz, 1249 → 50 kHz. Returns f in Hz |
 | `rp.set_freq_hz(freq, quadrature=True)` | nearest frequency (0.029 Hz .. 31.25 MHz); with `quadrature=True` only **odd** `gen_mod_sqp` values (sq_quad exactly 90°): 31.25 MHz → 1, 50 kHz → 1249, 1 MHz → 61 (1.008 MHz); `quadrature=False` allows 62.5 MHz (→ 0). Checked on the board |
 | `rp.get_freq()`, `rp.get_period()` | frequency [Hz] / period [s] from `gen_mod_sqp` |
 | `rp.set_phase(val, units='ticks')` | `gen_mod_phase_sq`: delay of `sq_phas` / sqF in ticks (0..P−1, else `ValueError`), or `units='deg'` / `'rad'` with the current period: at 50 kHz `set_phase(90, 'deg')` → 625, `set_phase(np.pi, 'rad')` → 1250 (board). Returns degrees. At 31.25 MHz: steps of 90° |
@@ -440,9 +441,34 @@ The `lock_mode` test configurations use kp −250 since 2026-10-12 (−500 befor
 kp −500 when it closes a lock). The same PID values lock at 50 kHz and at 31.25 MHz
 ([Usage.md](Usage.md#5-working-at-3125-mhz)).
 
-Ramp period: `T = (high − low) · (step + 1) · 8 ns · (2 − sawtooth)` ([FPGA.md](FPGA.md#ramp-scan)). With
+Ramp period: `T = N · (step + 1) · 8 ns`, N = 2·(high − low) (triangle) or (high − low) + 1 (sawtooth)
+([FPGA.md](FPGA.md#ramp-scan); up to v2.0.9 this page had the sawtooth one step short). With
 `step=100, ±4000` (the ramp of `example_usage.py` before v2.3.17) the period is 12.9 ms, shorter than a
 16.58 ms time trigger, which then never fires.
+
+`control_finn.py` has no helper to set the ramp by frequency (the *freq* tab of v2.0.10 is only in the web page). The
+same computation, with the formulas of [App.md](App.md#ramp-generator-scan):
+
+```python
+def ramp_by_freq(rp, f_hz, amp, off=0, sawtooth=False, **kw):
+    """Ramp of amplitude amp (counts, hig - low) around off (counts) at the nearest frequency to f_hz."""
+    low = int(off) - int(amp) // 2           # as the freq tab: low = off - floor(amp/2), high = low + amp
+    high = low + int(amp)
+    assert -8192 <= low < high <= 8191
+    n = (high - low + 1) if sawtooth else 2 * (high - low)   # steps per period
+    step = max(0, round(125e6 / (n * f_hz) - 1))
+    f_real = 125e6 / (n * (step + 1))
+    rp.set_ramp(step=step, low=low, high=high, sawtooth=sawtooth, **kw)
+    return step, f_real
+
+print(ramp_by_freq(rp, 100, 8000, enable=True))   # (77, 100.16...) as the web page (board test v2.0.10)
+```
+
+`round()` takes the nearest step, not exactly the nearest frequency as the page does (`rampStepForFreq()` compares the
+two neighbouring steps); the difference is at most one step. Written through `/lock` the register takes any 32-bit
+step; the web page only uses float32 integers (see [App.md](App.md#ramp-generator-scan)). The docstring of
+`set_ramp()` calls `direction` the "starting direction (triangle)"; in `gen_ramp.v` a triangle always rises after the
+scan floor ([FPGA.md](FPGA.md#ramp-scan)).
 
 ### Close and check a lock
 
@@ -497,8 +523,8 @@ Notes:
   the same value again does nothing (so the C controller rewriting registers does not disturb a lock).
 - The ramp runs only if `ramp_enable` (0x0A0) is also 1.
 - Changing a manual enable (bits 4:2) while LOCKED releases the lock.
-- `lock_trig_time` is 32 bits unsigned since v2.3.15 (up to 34.36 s; before, values ≥ 2³¹ aliased). Written
-  through `/lock` the value is exact; written from the web page it is rounded to float32 above 2²⁴ ticks
+- `lock_trig_time` is 32 bits unsigned since v2.3.15 (up to 34.36 s; before, values ≥ $2^{31}$ aliased). Written
+  through `/lock` the value is exact; written from the web page it is rounded to float32 above $2^{24}$ ticks
   ([FPGA.md](FPGA.md#lock-control-auto-lock), note on `lock_trig_time`).
 - Since v2.0.3 (FPGA) the time trigger only counts from a scan floor of a ramp that kept running: a Trigger Lock
   armed right after a release or with the ramp stopped waits for the next floor and fires at floor + time (before,
@@ -589,7 +615,7 @@ should use the HTTP API. It was **not tested with this App** (a confirmar); in `
 - The C controller writes `lock_control` only when the user changes a lock button or checkbox, and
   `lock_trig_time`, `lock_trig_val`, `lock_trig_sw`, `gen_mod_sqp`, `gen_mod_phase_sq` only when the user changes
   them; values written to these six registers from a script are copied to the parameters of the page (shown and
-  kept; above 2²⁴ the page shows a rounded value but does not rewrite the register). **The other lock
+  kept; above $2^{24}$ the page shows a rounded value but does not rewrite the register). **The other lock
   registers are rewritten with the controller's copy when the user changes any lock parameter in the
   page**, so a value written from a script can be overwritten by a later change in the page
   (`py/lock_from_registers.py` docstring).

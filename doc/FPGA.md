@@ -1,7 +1,7 @@
 # FPGA register map
 
-Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.4** (branch `master`,
-Vivado 2020.1, RedPitaya-FPGA project `v0.94`, model Z10 / STEMlab 125-14).
+Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.10** (branch `master`,
+Vivado 2020.1; the FPGA image is the one of v2.0.3 … v2.0.9, v2.0.10 changes only the web page; RedPitaya-FPGA project `v0.94`, model Z10 / STEMlab 125-14).
 
 This App derives from `lock_in+pid_harmonic` v2.3.18: the register map is the same except for the
 modulation generator and the lock-in (square instead of harmonic, see [Lock-in amplifier](#lock-in-amplifier)),
@@ -80,7 +80,7 @@ requested (`sys_ren`, 2 clocks with the address already stable) the `_rd` copies
 `sys_rdata` is stable for 2 clocks: `prj/v0.94/sdc/red_pitaya.xdc` has a 2-cycle multicycle constraint to
 `i_lock/sys_rdata_reg` (l. 82-83). Same kind of fix as the one of the scope `sys_rdata` in v2.3.10. Test:
 `test/lock_bus_read_sim.sh` (simulation: 4000/4000 unstable reads with the `lock.v` of v2.3.16, 0 with v2.3.17).
-On the board (v2.3.17-34): 0 bad reads of `in1`/`oscA` in 2000 `monitor` reads per condition and in 8·10⁶ dense
+On the board (v2.3.17-34): 0 bad reads of `in1`/`oscA` in 2000 `monitor` reads per condition and in $8\cdot 10^{6}$ dense
 reads; out1, ctrl_A, pidA_in/out, ramp_A, error, references, in2, oscB, signal_i consistent; X/Y frozen by
 `read_ctrl[0]` identical in 2000 reads (`reportes/lock-in_pid_h.md`, v2.3.17). Before v2.3.17 the only affected
 registers seen were `in1` (0xD4 in lock_in+pid_harmonic, 0xBC here) and `oscA` showing `in1` (0xE4, here 0xCC); the bus design also changed the timing
@@ -104,7 +104,7 @@ report: worst path to `sys_rdata` −10.035 ns → +1.892 ns, design WNS −10.0
 | `0x018` | 6 | `lock_control` | RW | 11 | u | 0..2047 | 1148 (`0x47C`) | Command + configuration of the lock state machine. Never modified by the FPGA (v2.3.13). See [bit fields](#lock_control-0x018). |
 | `0x01C` | 7 | `lock_status` | R | 16 | u | 0..65535 | — | State of the lock (v2.3.13, replaced `lock_feedback`). See [bit fields](#lock_status-0x01c). |
 | `0x020` | 8 | `lock_trig_val` | RW | 14 | s | -8192..8191 | 0 | Threshold of the **level** trigger, compared with the signal selected by `lock_trig_sw`. |
-| `0x024` | 9 | `lock_trig_time` | RW | 32 | u | 0..2³²−1 (34.36 s) | 0 | Delay of the **time** trigger, in ticks of 8 ns counted from the last scan floor (`ramp_floor_trig`). See the note below the table. |
+| `0x024` | 9 | `lock_trig_time` | RW | 32 | u | 0..$2^{32}-1$ (34.36 s) | 0 | Delay of the **time** trigger, in ticks of 8 ns counted from the last scan floor (`ramp_floor_trig`). See the note below the table. |
 | `0x028` | 10 | `lock_trig_sw` | RW | 4 | u | 0..15 | 0 | Signal used by the level trigger. See [selector values](#lock-trigger-signal-lock_trig_sw). |
 | `0x02C` | 11 | `rl_error_threshold` | RW | 13 | u | 0..8191 | 0 | Re-lock: out of lock when `|error| > rl_error_threshold`. |
 | `0x030` | 12 | `rl_signal_sw` | RW | 3 | u | 0..7 | 0 | Re-lock: signal compared with `rl_signal_threshold` (0 in1, 1 in2, 2 in1−in2, 3 aux_A, 4 aux_B, 5 sqXo, 6 sqYo, 7 sqFo). |
@@ -116,17 +116,17 @@ report: worst path to `sys_rdata` −10.035 ns → +1.892 ns, design WNS −10.0
 | `0x048` | 18 | `sf_config` | RW | 5 | u | 0..31 | 0 | Step response: `[0]` start, `[1]` freeze PID A output, `[2]` freeze PID A integrator, `[3]` freeze PID B output, `[4]` freeze PID B integrator (during the step). |
 
 Note on `lock_trig_time` (v2.3.15): the counter and the comparator of `lock/lock_ctrl.v` are 32 bits (l. 87-99,
-139, 151); up to v2.3.14 of lock_in+pid_harmonic they were 31 bits, so values ≥ 2³¹ aliased to `value − 2³¹` and the
-counter wrapped at 17.2 s. Since v2.0.3 (port of lock_in+pid_harmonic v2.3.23) the counter saturates at 2³²−1 instead
+139, 151); up to v2.3.14 of lock_in+pid_harmonic they were 31 bits, so values ≥ $2^{31}$ aliased to `value − 2^31` and the
+counter wrapped at 17.2 s. Since v2.0.3 (port of lock_in+pid_harmonic v2.3.23) the counter saturates at $2^{32}-1$ instead
 of wrapping, and the time trigger (and the level after time) only fires while `cnt_ok` = 1: the counter measures the
 time from a floor of a ramp that has been running since then (cleared while the effective ramp enable or the ramp
 generator, `ramp_run`, is off; set at the next floor; l. 101-115). A request armed after the ramp was stopped waits
 for the next floor. Written through the bus (`/lock`, `c/lock`) the value is exact (3000000000 and 4294967295 read back
 unchanged on the board). The C controller keeps its parameters as `float` (`src/main.h`), so a value written
 from the web page goes through float32: it is converted to the register with saturation
-(`lock_float_to_u32()`, `src/lock.c` l. 38 and 232), but above 2²⁴ ticks (134 ms) it is rounded to the float32
+(`lock_float_to_u32()`, `src/lock.c` l. 38 and 232), but above $2^{24}$ ticks (134 ms) it is rounded to the float32
 grid (steps of 2 to 256 ticks; error ≤ 128 ticks ≈ 1 µs at 34 s; e.g. "19 s" = 2375000000 → 2375000064). The
-read-back to the page is also a float (`src/lock.c` l. 369): 0xFFFFFFFF comes back as 2³², and the page clamps it
+read-back to the page is also a float (`src/lock.c` l. 369): 0xFFFFFFFF comes back as $2^{32}$, and the page clamps it
 to 4294967295 (v2.3.16). If the page later rewrites the lock registers it writes its rounded copy.
 
 ### Lock-in amplifier
@@ -145,18 +145,18 @@ v2.0.0: square generator (`lock/gen_mod_sq.v`) and square lock-in (`lock.v`, "Si
 | `0x064` | 25 | `error_sw` | RW | 3 | u | 0..7 | 0 | Error signal. See [selector values](#error-signal-error_sw). |
 | `0x068` | 26 | `error_offset` | RW | 14 | s | -8192..8191 | 0 | Subtracted from the selected signal: `error = sel − error_offset` (14 bits, wraps). |
 | `0x06C` | 27 | `error` | R | 14 | s | -8192..8191 | — | Error signal. Frozen by `read_ctrl[0]`. |
-| `0x070` | 28 | `error_mean` | R | 32 | s | — | — | Sum of the error over 2²⁷ ticks (1.07 s) / 2⁹: mean = `error_mean / 2^18` counts (`src/lock.c`). |
-| `0x074` | 29 | `error_std` | R | 32 | s | — | — | Sum of error² over 2²⁷ ticks / 2²²: var = `error_std/32 − mean²` (`src/lock.c`). |
+| `0x070` | 28 | `error_mean` | R | 32 | s | — | — | Sum of the error over $2^{27}$ ticks (1.07 s) / $2^{9}$: mean = `error_mean / 2^18` counts (`src/lock.c`). |
+| `0x074` | 29 | `error_std` | R | 32 | s | — | — | Sum of $\mathrm{error}^2$ over $2^{27}$ ticks / $2^{22}$: var = `error_std/32 − mean^2` (`src/lock.c`). |
 | `0x078` | 30 | `mod_out1` | RW | 14 | s | -1..8191 | −1 | Square modulation added to OUT1: `out1 ± mod_out1/2` with `sq_ref` (same peak amplitude as the harmonic modulation of lock_in+pid_harmonic for the same value). **Negative = off.** |
 | `0x07C` | 31 | `mod_out2` | RW | 14 | s | -1..8191 | −1 | Same for OUT2, with `sq_quad` (quadrature). |
-| `0x080` | 32 | `gen_mod_sqp` | RW | 32 | u | 0..2³²−1 | 1 | Half period − 1 of the square generator: period P = 2·(`gen_mod_sqp`+1) ticks, f = 125 MHz / P: 0 → 62.5 MHz (no quadrature), **1 → 31.25 MHz**, 1249 → 50 kHz, 2³²−1 → 0.029 Hz. `sq_quad` is exactly 90° behind `sq_ref` when the value is odd. |
+| `0x080` | 32 | `gen_mod_sqp` | RW | 32 | u | 0..$2^{32}-1$ | 1 | Half period − 1 of the square generator: period P = 2·(`gen_mod_sqp`+1) ticks, f = 125 MHz / P: 0 → 62.5 MHz (no quadrature), **1 → 31.25 MHz**, 1249 → 50 kHz, $2^{32}-1$ → 0.029 Hz. `sq_quad` is exactly 90° behind `sq_ref` when the value is odd. |
 | `0x084` | 33 | `gen_mod_phase_sq` | RW | 32 | u | 0..P−1 | 0 | Delay of `sq_phas` (and of the sqF demodulation) with respect to `sq_ref`, in ticks (360°·n/P; at 31.25 MHz steps of 90°). Values ≥ P act as P−1. |
 | `0x0B0` | 44 | `sq_ref` | R | 14 | s | ±4096 | — | Square reference: +4096 during the first half of the period, −4096 during the second. |
 | `0x0B4` | 45 | `sq_quad` | R | 14 | s | ±4096 | — | Quadrature: `sq_ref` delayed by floor(P/4) ticks. |
 | `0x0B8` | 46 | `sq_phas` | R | 14 | s | ±4096 | — | `sq_ref` delayed by `gen_mod_phase_sq` ticks. |
-| `0x0D4` | 53 | `sqX_28` | R | 28 | s | ±2²⁶ | — | Demodulated in-phase component (from **`sq_ref`**), before `sg_amp_sq`. Frozen by `read_ctrl[0]`. |
-| `0x0D8` | 54 | `sqY_28` | R | 28 | s | ±2²⁶ | — | Demodulated quadrature component (from **`sq_quad`**). Frozen. |
-| `0x0DC` | 55 | `sqF_28` | R | 28 | s | ±2²⁶ | — | Demodulated with `sq_phas`. Frozen. |
+| `0x0D4` | 53 | `sqX_28` | R | 28 | s | $\pm 2^{26}$ | — | Demodulated in-phase component (from **`sq_ref`**), before `sg_amp_sq`. Frozen by `read_ctrl[0]`. |
+| `0x0D8` | 54 | `sqY_28` | R | 28 | s | $\pm 2^{26}$ | — | Demodulated quadrature component (from **`sq_quad`**). Frozen. |
+| `0x0DC` | 55 | `sqF_28` | R | 28 | s | $\pm 2^{26}$ | — | Demodulated with `sq_phas`. Frozen. |
 
 The 28-bit outputs are `sq?_28 = mean(±signal_i) · 2^13` (13 fractional bits): the input multiplied by +1 / −1
 with the reference, filtered. With gain ×1, `sq?o = sq?_28 / 2^13` (14 bits, saturated). An input square wave of
@@ -170,17 +170,23 @@ Reset values: `lpf_sq` = `lpf_sqF` = 71 (2nd order, τ = 8.19 µs), `gen_mod_sqp
 |---|---|---|---|---|---|---|---|---|
 | `0x088` | 34 | `ramp_A` | R | 14 | s | -8192..8191 | — | Ramp output A. |
 | `0x08C` | 35 | `ramp_B` | R | 14 | s | -8192..8191 | — | Ramp output B = `ramp_A · ramp_B_factor / 4096`. |
-| `0x090` | 36 | `ramp_step` | RW | 32 | u | 0..2³²−1 | 0 | Ticks per ramp step **minus one**: each value of the ramp lasts `ramp_step + 1` ticks. |
+| `0x090` | 36 | `ramp_step` | RW | 32 | u | 0..$2^{32}-1$ | 0 | Ticks per ramp step **minus one**: each value of the ramp lasts `ramp_step + 1` ticks. |
 | `0x094` | 37 | `ramp_low_lim` | RW | 14 | s | -8192..8191 | −5000 | Lower limit of the ramp ("scan floor"). |
 | `0x098` | 38 | `ramp_hig_lim` | RW | 14 | s | -8192..8191 | 5000 | Upper limit of the ramp ("scan ceil"). |
 | `0x09C` | 39 | `ramp_reset` | RW | 1 | u | 0..1 | 0 | 1 = hold the ramp at 0 (written as `|sys_wdata`: any non-zero value is 1). |
 | `0x0A0` | 40 | `ramp_enable` | RW | 1 | u | 0..1 | 0 | Ramp enable ("Scan enable" of the Ramp panel). The ramp runs only if this **and** the effective ramp enable of `lock_control` are 1. |
-| `0x0A4` | 41 | `ramp_direction` | RW | 1 | u | 0..1 | 0 | Starting direction (triangle) / direction of the sawtooth. |
+| `0x0A4` | 41 | `ramp_direction` | RW | 1 | u | 0..1 | 0 | Direction of the sawtooth (1 rising, 0 falling). In a triangle it only reverses the slope at the moment it changes: after each scan floor the triangle always rises (`gen_ramp.v` l. 157; [App.md](App.md#ramp-generator-scan)). |
 | `0x0A8` | 42 | `ramp_sawtooth` | RW | 1 | u | 0..1 | 0 | 1 = sawtooth, 0 = triangle. |
 | `0x0AC` | 43 | `ramp_B_factor` | RW | 14 | s | -4096..4096 (RTL: -8192..8191) | 4096 | Ratio `ramp_B / ramp_A`, 4096 = 1. |
 
-Ramp period: `T = (ramp_hig_lim − ramp_low_lim) · (ramp_step + 1) · 8 ns · (2 − ramp_sawtooth)`
-(`index.html` l. 1890, consistent with `gen_ramp.v`).
+Ramp period: `T = N · (ramp_step + 1) · 8 ns`, `f = 125 MHz / (N · (ramp_step + 1))`, with N = 2 · (ramp_hig_lim −
+ramp_low_lim) for the triangle and N = (ramp_hig_lim − ramp_low_lim) + 1 for the sawtooth (the jump back is one step)
+(CHANGELOG v2.0.10, `gen_ramp.v` l. 104-105; `rampPeriodCycles()` in `index.html` l. 3227). Up to v2.0.9 the page and
+this page used `(hig − low) · (step + 1) · 8 ns · (2 − sawtooth)`, one step short for the sawtooth. Since v2.0.10 the
+web page can also set the ramp by frequency, amplitude and offset, and *Ramp period* takes the whole period with
+units ([App.md](App.md#ramp-generator-scan)); the registers are the same. The page limits `ramp_step` to
+0 … 2147483520 ($2^{31}-128$) because the controller handles it as a float32; through `/lock` the register takes any
+32-bit value.
 
 ### Inputs, outputs and monitor values
 
@@ -193,7 +199,7 @@ Ramp period: `T = (ramp_hig_lim − ramp_low_lim) · (ramp_step + 1) · 8 ns · 
 | `0x0CC` | 51 | `oscA` | R | 14 | s | -8192..8191 | Signal sent to scope channel A. |
 | `0x0D0` | 52 | `oscB` | R | 14 | s | -8192..8191 | Signal sent to scope channel B. |
 | `0x0E0` | 56 | `cnt_clk` | R | 32 | u | — | Low 32 bits of a 50-bit tick counter (frozen by `read_ctrl[0]`; counts only while `read_ctrl[1] = 1`, otherwise 0). |
-| `0x0E4` | 57 | `cnt_clk2` | R | 32 | u | 0..2¹⁸−1 | High 18 bits of the same counter. |
+| `0x0E4` | 57 | `cnt_clk2` | R | 32 | u | 0..$2^{18}-1$ | High 18 bits of the same counter. |
 | `0x0E8` | 58 | `read_ctrl` | RW | 3 | u | 0..7 | `[0]` freeze the copies of `signal_i`, `error`, `sqX_28`..`sqF_28`, `ctrl_A`, `ctrl_B`, `cnt_clk*` (v2.3.17: also held during each bus read); `[1]` run the tick counter; `[2]` unused. Reset 0. |
 | `0x154` | 85 | `aux_A` | RW | 14 | s | -8192..8191 | Constant usable as a signal in several selectors (and as a manual offset on an output). Reset 0. |
 | `0x158` | 86 | `aux_B` | RW | 14 | s | -8192..8191 | Same. Reset 0. |
@@ -206,8 +212,8 @@ PID B is identical to PID A at offset `+0x34` (indices +13).
 |---|---|---|---|---|---|---|---|---|
 | `0x0EC` / `0x120` | 59 / 72 | `pidX_sw` | RW | 4 | u | 0..15 | 0 (error) | PID input (4-bit register since v2.3.15, the width of the selector `muxer4`; before it was 5 bits and 16..31 behaved as 0..15). Writing 17 reads back 1. See [selector values](#pid-inputs-pida_sw-pidb_sw). |
 | `0x0F0` / `0x124` | 60 / 73 | `pidX_PSR` | RW | 3 | u | 0..4 | 3 | Proportional divider: 0 /1, 1 /8, 2 /64, 3 /1024, 4 /4096. Others → /1. |
-| `0x0F4` / `0x128` | 61 / 74 | `pidX_ISR` | RW | 4 | u | 0..9 | 8 | Integrator divider 2^n, n = 0,3,6,10,13,16,20,23,26,30. Others → 2⁰. |
-| `0x0F8` / `0x12C` | 62 / 75 | `pidX_DSR` | RW | 3 | u | 0..5 | 0 | Derivative: averages 2^n samples, n = 0,3,6,10,13,16. Others → 2⁰. |
+| `0x0F4` / `0x128` | 61 / 74 | `pidX_ISR` | RW | 4 | u | 0..9 | 8 | Integrator divider $2^n$, n = 0,3,6,10,13,16,20,23,26,30. Others → $2^{0}$. |
+| `0x0F8` / `0x12C` | 62 / 75 | `pidX_DSR` | RW | 3 | u | 0..5 | 0 | Derivative: averages $2^n$ samples, n = 0,3,6,10,13,16. Others → $2^{0}$. |
 | `0x0FC` / `0x130` | 63 / 76 | `pidX_SAT` | RW | 14 (8 used) | u | 0..13 | 13 | Saturation of the integral term at ±2^`SAT` counts (13 → ±1 V). |
 | `0x100` / `0x134` | 64 / 77 | `pidX_sp` | RW | 14 | s | -8192..8191 | 0 | Set point. |
 | `0x104` / `0x138` | 65 / 78 | `pidX_kp` | RW | 14 | s | -8192..8191 | 0 | Proportional gain. |
@@ -222,7 +228,7 @@ PID B is identical to PID A at offset `+0x34` (indices +13).
 
 | Offset | Idx | Name | R/W | Bits | s/u | Range | Reset | Function |
 |---|---|---|---|---|---|---|---|---|
-| `0x15C` | 87 | `stream_ip` | RW | 32 | u | IPv4 | 0 | IP of the computer that receives the stream, little-endian: `a.b.c.d` = `a + b·2⁸ + c·2¹⁶ + d·2²⁴`. |
+| `0x15C` | 87 | `stream_ip` | RW | 32 | u | IPv4 | 0 | IP of the computer that receives the stream, little-endian: `a.b.c.d` = $a + b\cdot 2^{8} + c\cdot 2^{16} + d\cdot 2^{24}$. |
 | `0x160` | 88 | `stream_port` | RW | 32 | u | 0..65535 | 6000 | TCP port of the receiver. |
 | `0x164` | 89 | `stream_rate` | RW | 17 | u | 64..65536 | 128 | Decimation of the scope while streaming (the UI offers 64, 128, 256, 512, 1024, 8192, 65536). |
 | `0x168` | 90 | `stream_cmd` | RW | 32 | u | 0..1 | 0 | 1 = streaming running. Bit 0 also tells the scope to use `stream_rate` as decimation. |
@@ -295,8 +301,8 @@ From `lock.v` (Signal Processing) and `lock/LP_filter_sq.v`. Each line (sqX, sqY
 | 10 | active | active | 2 |
 | 11 | active | active | 2 (not offered by the UI) |
 
-`[4:0]` = n (0..27; larger values act as 27): time constant τ = 8 ns · 2^(n+3) (64 ns .. 8.59 s), cut-off
-f = 1/(2πτ) (2.49 MHz .. 18.5 mHz). The C controller writes `order << 5 | tau`. Reset value 71 = order 2, n = 7
+`[4:0]` = n (0..27; larger values act as 27): time constant $\tau = 8\ \mathrm{ns}\cdot 2^{n+3}$ (64 ns .. 8.59 s), cut-off
+$f = 1/(2\pi\tau)$ (2.49 MHz .. 18.5 mHz). The C controller writes `order << 5 | tau`. Reset value 71 = order 2, n = 7
 (8.19 µs, 19.4 kHz). The stage uses its output one tick late in the feedback (timing); with k ≥ 3 the response
 is the one of the ideal first-order filter (simulated, `test/sq_lockin_sim.sh`: 63 % of a step after 1031 ticks for k = 10, ideal 1024; `devAgent.md` 2026-10-12 00:50).
 
@@ -434,4 +440,4 @@ l. 1050-1140 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the
 | 10 | `src/fpga.h` comment | `data_dec` | "bits [16:0]" | 20 bits. **Fixed in v2.3.18** |
 | 11 | `fpga/README.md` | scope decimation | "17-bit decimation (max 64k)" | 20 bits (max 512k). **Fixed in v2.3.18** (`fpga/README.md` l. 67) |
 | 12 | `index.html` | *Slow outputs* selectors | options `sin_ref`, `cos_ref`, `cos_1f..3f` (labels of lock_in+pid_harmonic) | the selectors have no register and no effect in this App (see [Other blocks](#other-blocks)); the RTL muxers `slow_out3/4_sw_m` list `sq_ref`, `sqXo`... Cosmetic, reported to devAgent (v2.0.0) |
-| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1623); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |
+| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1628); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |
