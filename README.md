@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.x (Ecosystem 2.0)
 
-Current version: **2.0.9** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.10** (branch `master`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -64,6 +64,10 @@ Current version: **2.0.9** (branch `master`). The major number 2 marks, as in th
   calibration offset of the input (in volts it was one offset off: above in its search, below in the level it left) or
   a calibrated full scale other than 1 V (level and Y range were scaled by 1 / full scale); in Raw Mode it gives a
   whole count and half counts are rounded as the page shows them (−2.5 was shown as −2 and written as −3).
+- 2.0.10 (from lock_in+pid_harmonic 2.3.31 / lock_in+pid_plus 2.2.0, web page only): **Ramp Controller** with tabs
+  *period* / *freq* (Frequency in Hz with the nearest reachable value, Amp. p-p / Offset), *Ramp period* in s / ms (whole
+  period), *Lock osc. screen* (scope locked on the ramp: rising half of a triangle, the time zoom sets the ramp limits),
+  *Reset zoom* alternating whole period / rising half (Scan floor, triangle), no stale *Force X* of `GET /data`.
 
 Tested on a STEMlab 125-14 with RedPitaya_OS 2.04-35 (2.0.0-5 and 2.0.0-6): generator exact to the tick at 31.25 MHz
 and 50 kHz, lock-in at 50 kHz equal to the correlation computed from the scope, **real locks at 50 kHz and at
