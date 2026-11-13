@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.x (Ecosystem 2.0)
 
-Current version: **2.0.10** (branch `master`; package `archive/lock_in+pid_square-2.0.10-20-devbuild`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.11** (branch `master`; package `archive/lock_in+pid_square-2.0.11-21-devbuild`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -71,6 +71,9 @@ Current version: **2.0.10** (branch `master`; package `archive/lock_in+pid_squar
   one period of the square modulation), no stale *Force X* of `GET /data`; the four ramp checkboxes in two columns, no
   "-0 mV" labels. Same FPGA and C sources as v2.0.9; tested on RP2, also a lock at 31.25 MHz. See
   [doc/Usage.md](doc/Usage.md#ramp-controller) and [doc/App.md](doc/App.md#ramp-generator-scan).
+- 2.0.11 (from lock_in+pid_plus 2.2.1, web page only): no lost 2nd click of *Reset zoom* when the POST of the 1st one is retried after a timeout (nginx
+  hang): the answer of that POST no longer brings back the old window (*Force X*); a value changed back during a slow POST
+  is no longer lost. Web page only.
 
 ![Ramp Controller of v2.0.10: tab freq (100 Hz triangle, Amp. p-p 8000) and Lock osc. screen: the scope on Scan floor with the window 0 … T/2, the rise of Ramp A (red)](.README/ramp_controller_lock_osc_screen_v2.0.10.jpg)
 
