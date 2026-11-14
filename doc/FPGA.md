@@ -1,7 +1,7 @@
 # FPGA register map
 
-Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.10** (branch `master`,
-Vivado 2020.1; the FPGA image is the one of v2.0.3 … v2.0.9, v2.0.10 changes only the web page; RedPitaya-FPGA project `v0.94`, model Z10 / STEMlab 125-14).
+Register map of the FPGA design of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.11** (branch `master`,
+Vivado 2020.1; the FPGA image is the one of v2.0.3 … v2.0.9, v2.0.10 and v2.0.11 change only the web page; RedPitaya-FPGA project `v0.94`, model Z10 / STEMlab 125-14).
 
 This App derives from `lock_in+pid_harmonic` v2.3.18: the register map is the same except for the
 modulation generator and the lock-in (square instead of harmonic, see [Lock-in amplifier](#lock-in-amplifier)),
@@ -181,7 +181,7 @@ Reset values: `lpf_sq` = `lpf_sqF` = 71 (2nd order, τ = 8.19 µs), `gen_mod_sqp
 
 Ramp period: `T = N · (ramp_step + 1) · 8 ns`, `f = 125 MHz / (N · (ramp_step + 1))`, with N = 2 · (ramp_hig_lim −
 ramp_low_lim) for the triangle and N = (ramp_hig_lim − ramp_low_lim) + 1 for the sawtooth (the jump back is one step)
-(CHANGELOG v2.0.10, `gen_ramp.v` l. 104-105; `rampPeriodCycles()` in `index.html` l. 3227). Up to v2.0.9 the page and
+(CHANGELOG v2.0.10, `gen_ramp.v` l. 104-105; `rampPeriodCycles()` in `index.html` l. 3334). Up to v2.0.9 the page and
 this page used `(hig − low) · (step + 1) · 8 ns · (2 − sawtooth)`, one step short for the sawtooth. Since v2.0.10 the
 web page can also set the ramp by frequency, amplitude and offset, and *Ramp period* takes the whole period with
 units ([App.md](App.md#ramp-generator-scan)); the registers are the same. The page limits `ramp_step` to
@@ -440,4 +440,4 @@ l. 1050-1140 (writes) and 1135-1225 (reads) agree with `c/lock.txt` and with the
 | 10 | `src/fpga.h` comment | `data_dec` | "bits [16:0]" | 20 bits. **Fixed in v2.3.18** |
 | 11 | `fpga/README.md` | scope decimation | "17-bit decimation (max 64k)" | 20 bits (max 512k). **Fixed in v2.3.18** (`fpga/README.md` l. 67) |
 | 12 | `index.html` | *Slow outputs* selectors | options `sin_ref`, `cos_ref`, `cos_1f..3f` (labels of lock_in+pid_harmonic) | the selectors have no register and no effect in this App (see [Other blocks](#other-blocks)); the RTL muxers `slow_out3/4_sw_m` list `sq_ref`, `sqXo`... Cosmetic, reported to devAgent (v2.0.0) |
-| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1628); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |
+| 13 | `src/main.c` | `lock_mod_sq_on` (parameter 197, "todo") | a parameter of the UI | not a register: it only toggles the visibility of the square oscillator panel in the page (`index.html` l. 1735); there is no element with that id in this page. Harmless leftover, reported (v2.0.0) |

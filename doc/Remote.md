@@ -1,7 +1,7 @@
 # Remote control
 
-How to control `lock_in+pid_square` **v2.0.10** (branch `master`; nothing of the remote control changed in v2.0.10, which only
-changes the web page) from a program, without the web page. The registers are
+How to control `lock_in+pid_square` **v2.0.11** (branch `master`; nothing of the remote control changed in v2.0.10 and v2.0.11, which only
+change the web page) from a program, without the web page. The registers are
 described in [FPGA.md](FPGA.md); the meaning of each instrument in [App.md](App.md).
 
 The HTTP API, the C tools and the Python client are the ones of `lock_in+pid_harmonic` v2.3.18 with the names and

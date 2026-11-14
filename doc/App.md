@@ -1,6 +1,6 @@
 # The App: instruments and specifications
 
-`lock_in+pid_square` ("Square Lock-in+PID") **v2.0.10** for the Red Pitaya STEMlab 125-14,
+`lock_in+pid_square` ("Square Lock-in+PID") **v2.0.11** for the Red Pitaya STEMlab 125-14,
 Ecosystem 2.0 (RedPitaya_OS 2.04-35). Branch `master`.
 
 It is `lock_in+pid_harmonic` v2.3.18 (rp_lock-in_pid_h) with the harmonic modulation generator and lock-in
@@ -185,8 +185,8 @@ position of the zero crossing does not depend on the phase, only the slope does.
 web page (tabs *period* / *freq*, *Lock osc. screen*: [Usage.md](Usage.md#ramp-controller)). `gen_ramp.v` is the same
 file as in `lock_in+pid_harmonic` and `lock_in+pid_plus` (same md5 `794ad115…`). The relations below are those of
 CHANGELOG v2.0.10, checked against a cycle model of `gen_ramp.v` (`test/ramp_ui_sim.js`) and on the RTL
-(`test/ramp_mod_period_sim.sh`); in the page they are the `[RAMP CALC]` block of `index.html` (l. 3425-3651; the
-period, `rampPeriodCycles()`, l. 3227).
+(`test/ramp_mod_period_sim.sh`); in the page they are the `[RAMP CALC]` block of `index.html` (l. 3532-3758; the
+period, `rampPeriodCycles()`, l. 3334).
 
 | Item | Value |
 |---|---|
@@ -196,8 +196,8 @@ period, `rampPeriodCycles()`, l. 3227).
 | Steps per period N | triangle **N = 2 · (hig − low)**; sawtooth **N = (hig − low) + 1** (the jump back is one step). One period goes from scan floor to scan floor |
 | Period, frequency | **T = N · (`ramp_step` + 1) · 8 ns**, **f = 125 MHz / (N · (`ramp_step` + 1))**. E.g. ±5000, `ramp_step` = 400, triangle → 64.16 ms, 15.586 Hz (test configuration `lock_mode`, [panel](Usage.md#ramp-controller)); ±5000, `ramp_step` = 200000 sawtooth → 16.0 s; Amp. 8000 triangle, step 77 → 100.1603 Hz (board test v2.0.10) |
 | Frequency range | from 125 MHz / (N · $2^{31}$) (largest step used by the page) to 125 MHz / N (step 0): for ±5000 (N = 20000, triangle) 2.9 µHz … 6.25 kHz. The resolution is that of the integer step: coarse near step 0 (e.g. Amp. 8000: 7812.5, 3906, 2604 Hz for steps 0, 1, 2) |
-| Amplitude, offset (tab *freq*) | Amp. p-p = hig − low (counts; mVpp = Amp · 1000 / 8192); Offset = floor((hig + low) / 2). Inverse: low = Offset − floor(Amp / 2), hig = low + Amp (exact round trip, odd amplitudes too) (`rampAmpOffOf()` / `rampLimsOf()`, `index.html` l. 3498-3505) |
-| `ramp_step` as a parameter | the C controller keeps it as a float32 (`src/main.c` l. 359, parameter table of `float` values) and `lock.c` writes `(int)value` (l. 314): above $2^{24}$ only the integers of a float32 reach the register (2, 4 … 128 apart). The page only uses such steps, at most $2^{31}-128$ = 2147483520 (`ramp_step_max`, `index.html` l. 3437), in both tabs. The register itself is 32 bits (`lock.v` l. 68) |
+| Amplitude, offset (tab *freq*) | Amp. p-p = hig − low (counts; mVpp = Amp · 1000 / 8192); Offset = floor((hig + low) / 2). Inverse: low = Offset − floor(Amp / 2), hig = low + Amp (exact round trip, odd amplitudes too) (`rampAmpOffOf()` / `rampLimsOf()`, `index.html` l. 3605-3612) |
+| `ramp_step` as a parameter | the C controller keeps it as a float32 (`src/main.c` l. 359, parameter table of `float` values) and `lock.c` writes `(int)value` (l. 314): above $2^{24}$ only the integers of a float32 reach the register (2, 4 … 128 apart). The page only uses such steps, at most $2^{31}-128$ = 2147483520 (`ramp_step_max`, `index.html` l. 3544), in both tabs. The register itself is 32 bits (`lock.v` l. 68) |
 | Second output | `ramp_B = ramp_A · ramp_B_factor / 4096` (factor −4096..4096 in the UI, i.e. −1..1) |
 | Triggers | "Scan floor" (low limit reached) and "Scan ceil" (high limit), for the scope and for the time trigger of the lock (`gen_ramp.v` l. 173-174) |
 | Enable | runs while `ramp_enable` (Ramp panel, "Scan enable" checkbox) **and** the ramp enable of the lock control ("Scan enable" button) are on; `ramp_reset` holds it at 0 |

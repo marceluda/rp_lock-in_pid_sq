@@ -15,7 +15,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ![Lock captured with the square lock-in at 50 kHz: ctrl_A (blue) and error = sqYo (red), t = 0 at the lock (v2.0.0)](.README/sq_lock_captured_v2.0.0.jpg)
 
-**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0` .. `v2.0.10`).
+**Repository:** https://github.com/marceluda/rp_lock-in_pid_sq (branch `master`; tags `v2.0.0` .. `v2.0.11`).
 
 
 ## Version 2.0.x (Ecosystem 2.0)
@@ -73,7 +73,8 @@ Current version: **2.0.11** (branch `master`; package `archive/lock_in+pid_squar
   [doc/Usage.md](doc/Usage.md#ramp-controller) and [doc/App.md](doc/App.md#ramp-generator-scan).
 - 2.0.11 (from lock_in+pid_plus 2.2.1, web page only): no lost 2nd click of *Reset zoom* when the POST of the 1st one is retried after a timeout (nginx
   hang): the answer of that POST no longer brings back the old window (*Force X*); a value changed back during a slow POST
-  is no longer lost. Web page only.
+  is no longer lost; the page checks that the server took the window it sent and sends it again if not. Web page only;
+  tested on RP2 (PASS). See [doc/Structure.md](doc/Structure.md#time-window-of-the-plot-and-force-x).
 
 ![Ramp Controller of v2.0.10: tab freq (100 Hz triangle, Amp. p-p 8000) and Lock osc. screen: the scope on Scan floor with the window 0 … T/2, the rise of Ramp A (red)](.README/ramp_controller_lock_osc_screen_v2.0.10.jpg)
 

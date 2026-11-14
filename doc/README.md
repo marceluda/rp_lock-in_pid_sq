@@ -1,9 +1,9 @@
 # RP Square Lock-in+PID — documentation
 
-Documentation of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.10** (package 2.0.10-20, branch `master`,
-Ecosystem 2.0, FPGA built with Vivado 2020.1; the FPGA is the one of v2.0.3 … v2.0.9, v2.0.10 changes only the web
-page), derived from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`) with the later changes of that App
-ported up to its v2.3.31. All the pages describe this App;
+Documentation of `lock_in+pid_square` ("Square Lock-in+PID") **v2.0.11** (package 2.0.11-21, branch `master`,
+Ecosystem 2.0, FPGA built with Vivado 2020.1; the FPGA is the one of v2.0.3 … v2.0.9, v2.0.10 and v2.0.11 change only
+the web page), derived from `lock_in+pid_harmonic` v2.3.18 (tag `v2.0.0`, commit `9e7b4a9`) with the later changes of
+that App ported up to its v2.3.32. All the pages describe this App;
 data measured on the board come from the tests of 2026-10-12 (builds 2.0.0-5 and 2.0.0-6), the screenshots of
 2026-10-16 (2.0.4-13) and the test of 2026-11-13 (2.0.10-20), and the values inherited
 from the harmonic App that were not measured again say so. Back to the [project README](../README.md) ·
@@ -17,6 +17,11 @@ time zoom of the scope into new ramp limits: [Usage.md](Usage.md#ramp-controller
 (with Square mod. it still gives one period of the modulation;
 [Usage.md](Usage.md#reset-zoom-whole-period--rising-half)); the *Force X* of the server is applied once
 ([Structure.md](Structure.md#time-window-of-the-plot-and-force-x)).
+
+New in v2.0.11 (from `lock_in+pid_plus` 2.2.1): a POST retried after a timeout of nginx no longer undoes a time window
+set meanwhile (the second click of *Reset zoom*), the page checks that the server took the window it sent and sends it
+again if not, and a value changed back during a POST in flight is kept
+([Structure.md](Structure.md#a-post-retried-after-a-timeout-and-a-window-that-the-server-does-not-take-v2011)).
 
 | Document | Contents |
 |---|---|
