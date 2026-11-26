@@ -169,9 +169,11 @@ E('slow_lock_in_display').cls.add('in');
 E('lock_osc_raw_mode').data.checked = true;
 Object.assign(ctx.params.local, { lock_sqX: 1000 * 8192, lock_sqY: -1000 * 8192, lock_sqF: 500 * 8192, lock_error_mean: 0, lock_error_std: 0 });
 ctx.display_update();
-check('6.1 raw mode: sqX 1000, sqY -1000, R 1414.214, phi -45 deg, sqF 500 (counts)',
-      E('disp_x').html === '1000.000' && E('disp_y').html === '-1000.000' && E('disp_r').html === '1414.214' &&
-      Math.abs(parseFloat(E('disp_fi').html) + 45) < 1e-6 && E('disp_F').html === '500.000',
+// v2.0.12 (lock_in+pid_harmonic 2.3.33 / lock_in+pid 2.2.17): Raw Mode shows the 28-bit registers as they are (it was / 8192:
+// 1000.000, -1000.000, 1414.214, 500.000)
+check('6.1 raw mode: the registers sqX 8192000, sqY -8192000, R 11585238, phi -45 deg, sqF 4096000 (counts * 8192 = 1000, -1000, 500)',
+      E('disp_x').html === '8192000' && E('disp_y').html === '-8192000' && E('disp_r').html === '11585238' &&
+      Math.abs(parseFloat(E('disp_fi').html) + 45) < 1e-6 && E('disp_F').html === '4096000',
       [E('disp_x').html, E('disp_y').html, E('disp_r').html, E('disp_fi').html, E('disp_F').html].join(' '));
 E('lock_osc_raw_mode').data.checked = false;
 ctx.display_update();

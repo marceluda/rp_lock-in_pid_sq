@@ -20,6 +20,85 @@ because this is a new App (the 0.x / 1.x numbers would suggest a version for the
 exist for this App).
 
 
+## v2.0.12 - 2026-11-26 - Calibration of the EEPROM in the universal format (5 / 6, Gen2), ADC offset subtracted, calibration in the display (Raw Mode off), Raw Mode = plain integers (port of lock_in+pid_harmonic 2.3.33 = lock_in+pid 2.2.17; C controller + web page, FPGA unchanged)
+
+Port of `rp_lock-in_pid_h` **v2.3.33** (`a502b55`), which ports the calibration work of `rp_lock-in_pid` **v2.2.17**
+(builds 33 … 36; see the CHANGELOG of lock_in+pid for the history of each build). `src/sig_scale.h` and the `[CALIB DISPLAY]`
+block are those of _h 2.3.33 with the selectors of the square lock-in of this App (fpga `lock.v`), plus the one-line
+switch of the PID inputs (below). The new code is marked `v2.0.12` (some comments keep `v2.2.17` /
+`build 35` / `build 36` of lock_in+pid as the reference). Bug reported on a **STEMlab 125-14 Pro v2.0 (Gen2)**: IN1 at a constant > 30 V and IN2 at ~0 V with the
+inputs open (`reportes/gen2_resultados.md`, Apps folder): the calibration is stored in the universal format 6 and the
+App read it with the layout of `apps-free/scope` (2013).
+
+**EEPROM (build 33 of lock_in+pid):**
+- FIXED **`src/calib.c` / `src/calib.h` read the format of the EEPROM** (identical to lock_in+pid 2.2.17 and _h 2.3.33,
+  md5 `797d4a32…` / `045a9bde…`; the old copies were the common `72a4df3b…` too): **5 / 6 (universal)**: header + `{u16 id; i32 value}` items (ids 9 / 11
+  ADC gain LV, 10 / 12 offset LV, 17 / 19 gain HV, 18 / 20 offset HV, 1 / 3 DAC gain, 2 / 4 DAC offset); **1 or no
+  header**: the old layout, with the **LV** offset at `0x34` / `0x38` when the magic is valid. User zone; if not valid
+  the factory zone (`0x1c00`); else **nominal values** (1 V / 20 V, offsets 0, DAC 1 V, 2 V on Gen2). Sanity: LV
+  0.5 … 2 V, HV 10 … 40 V, DAC 0.5 … 3 V, offsets within ±1000 counts. `hw_rev` (`0x1800`) `…_v2.0` = Gen2, DAC chip
+  full scale 2 V. One line `Calibration: …` in the log of the App.
+- FIXED **sign of the ADC offset** (subtracted, as the official library; the App added it) and **offset of the LV range**
+  (the HV offset was used in both ranges).
+- CHANGED nominal values: 1 V / 20 V, offsets 0 (they were the 0.6543 V / 14.56 V / offset 585 of apps-free 0.9x).
+- ADDED read-only parameter **`calib_status`** (0 user zone, 1 factory zone, 2 nominal) and a warning next to the title
+  of the page when it is not 0 (`calibWarn()`).
+- On a Gen1 board with format 1 (RP2): full scales and DAC identical; LV offset of IN1 +210 counts (+25.6 mV), IN2 −20
+  counts (−2.4 mV); HV unchanged.
+
+**Display (builds 34 / 35 of lock_in+pid, final rule of the user):** a value $n$ is shown as
+$V = (n + c)\,k/8192$, the same rules in the controller (`src/sig_scale.h`: scope traces, Measure, scope trigger,
+`scale_ch1` / `scale_ch2`) and in the page (block `[CALIB DISPLAY]`: labels, lock-in displays, voltages typed with
+units). The FPGA gets the same integers as before. **Raw Mode off:**
+
+| Signal | volts of 8192 counts ($k$) | correction $c$ |
+|---|---|---|
+| in1, in2 | that input, its range (*Gain settings* Channel 1 = IN1, Channel 2 = IN2) × probe | its ADC offset |
+| in1-in2 (level trigger 9) | mean of IN1 / IN2 of the range in use (× probe); different ranges / probes: mean of the LV ones | 0 |
+| lock-in displays sqX, sqY, R, sqF (labels only) | input calibration of the *Lock-in input* (`lock_signal_sw`): in1 → IN1, in2 → IN2, in1-in2 → mean; sq_ref, sq_quad, sq_phas, aux_A, Ramp A → nominal | 0 |
+| ctrl_A, ctrl_B (also level trigger 12 / 13) | DAC of the output they go to (not routed: the DAC of another signal of their chain, else OUT1 / OUT2) | −DAC offset if routed directly |
+| out1, out2 (scope selector 19 / 20: the integer of each DAC) | DAC of that output | −its DAC offset |
+| everything else: error, sqXo, sqYo, sqFo and signal_i traces, PID inputs (also in1 / in2 / in1-in2 as PID input) and set points, Ramp A / B, PID A / B out, aux_A / B, square references sq_ref, sq_quad, sq_phas (routed or not) | **nominal** 1 V | 0 |
+
+- So ctrl = ramp + PID out holds in counts, not exactly in volts (ctrl_A with the DAC, Ramp A and PID A out nominal).
+- **PID inputs in1 / in2 / in1-in2** (`lock_pidA_sw` / `lock_pidB_sw` 7 / 8 / 6): nominal, as lock_in+pid and
+  lock_in+pid_harmonic (lock_in+pid_plus gives them the input calibration). Pending decision of the user: it is a
+  **one-line switch**, `RP_SIG_PID_IN_CALIB` in `src/sig_scale.h` and `calib_pid_in_calib` in `[CALIB DISPLAY]` (change
+  both; `test/calib_display_sim.js` checks that they agree and tests the other position too).
+- CHANGED scope traces / Measure / trigger: each scope channel takes the scale of the signal it shows (it was the IN1 /
+  IN2 full scale of channel A / B for any signal, also in2, ctrl_A or out1). A change of `lock_out1_sw` /
+  `lock_out2_sw` / `lock_pidA_sw` / `lock_pidB_sw` updates the scope worker.
+- CHANGED labels of the page (Ramp lims, mVpp / mVdc, *freq* tab, PID set points (they divided by 8191), $V_\mathrm{trg}$,
+  lock-in displays (always 8192 counts = 1 V before)), refreshed when Raw Mode / calibration / ranges / routing / lock-in input change.
+- **Units rule:** a value typed **with units** (`V`, `mV`; *Level trigger*, *Amp. p-p*, *Offset*, click on the plot for
+  the level trigger) is converted with the scale of its signal, $n = \mathrm{round}(V\cdot 8192/k - c)$; a **bare
+  number** is the integer as it is. Raw Mode on and off.
+- ADDED 12 read-only params `calib_in1_lv` … `calib_out2_offs` (not sent, not saved in configs). `PARAMS_NUM` 215.
+- **Raw Mode on = the plain integers of the FPGA everywhere**: FIXED the Measure table added the calibration offset
+  (`rp_osc_meas_convert()`); labels in `counts`; lock-in displays sqX, sqY, R, sqF are the 28-bit registers (they were / 8192
+  with 3 decimals); Y range of the plot in `counts` (it said "16384 V").
+- FIXED "0.5 V" in the PID set point code path (`parseInt` gave 0).
+
+**Fixes of the board test of lock_in+pid 2.2.17-34 (build 36):**
+- FIXED **titles of the lock-in displays after Raw Mode on → off** (they stayed "sqX [int]" …: `last_disp_units` read the
+  non-existent `#btn_disp_units`; now it is the Raw Mode of the last update). The same code was in this App.
+- FIXED **scope *Level* field with unrounded volts** (`0,249999689324`): rounded to `trigLevelDecimals()` (display
+  only; the parameter keeps its value).
+- FIXED "3124 countspp" → "3124 counts pp" / "counts dc" (`calibSfx()`).
+
+**Not changed:** `py/` and `resources/remote_control/` (8192 counts = 1 V; `control_finn.py` converts in1 / in2 with the
+format-1 names of `calib -rv`, see doc/Remote.md); the AWG of `generate.c` is not used by the App; FPGA (`fpga.bit.bin`
+`8a282975…`, `red_pitaya.bit` `ef046e2e…`).
+
+- Tests: new `test/calib_test.c` (38/38, identical to lock_in+pid), `test/calib_display_sim.js` (49 checks, the one of _h
+  2.3.33 with the selectors of this App plus the switch of the PID inputs: 800 random cases page = controller through the new `test/sig_scale_dump.c`
+  in both positions of the switch, and the switch in the same position in the page and the C), `test/disp_labels_sim.js`
+  (7/7, sqX … sqF; v2.0.11 fails 4); `test/raw_trigger_sim.js` 58/58 (rounding checks); `auto_set_c_sim` with a fake EEPROM image
+  of the old defaults (`fake_fopen()`) and 11.17-11.22: 76 OK / 0 FAIL; `trig_level_test` ALL PASS; `sq_modulation_ui_sim` 6.1
+  updated (Raw Mode: the displays are the 28-bit registers, 8192000 for 1000 counts; it expected 1000.000) 29/29; the
+  other node sims and the xsim sims pass.
+- `controllerhf.so` rebuilt; FPGA unchanged. Package `lock_in+pid_square-2.0.12-22-devbuild`. Not tested on a board.
+
 ## v2.0.11 - 2026-11-13 - Force X of a retried POST: the 2nd click of Reset Zoom is no longer lost (web page only, no FPGA / C change; from lock_in+pid_plus 2.2.1)
 
 Port of the fix of `rp_lock-in_pid_plus` v2.2.1 (`a8d4b0b`; see its CHANGELOG). Only `index.html` and

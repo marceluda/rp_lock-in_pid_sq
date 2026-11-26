@@ -41,7 +41,7 @@
  *      floors; 11.4 Normal without trigger: nothing. SIM_AUTO=1 test/auto_set_c_sim/run.sh runs only section 11.
  *  12. v2.0.8: Raw Mode trigger level (lock_osc_raw_mode = 1): trig_level in ADC counts is written to the threshold
  *      register of the scope as it is (before: taken as volts, 100 counts -> 8191), with the calibration offset of the
- *      input selected by lock_oscA_sw / lock_oscB_sw (585 here: calib.c defaults) or none (internal signals); volts
+ *      input selected by lock_oscA_sw / lock_oscB_sw (585 here: EEPROM image of sim_eeprom_make(), the calib.c defaults up to 2.0.11) or none (internal signals); volts
  *      mode unchanged; AUTO in Raw Mode: level and Y range in counts (Y was clipped to +-1000) and a threshold near
  *      the middle of the signal. Runs after section 5 (instant acquisitions: sine +-3000 / +-1500 counts).
  *      v2.0.9 (12.10-12.15): the AUTO threshold at the middle of the signal in both modes with a calibration offset
@@ -49,7 +49,10 @@
  *      that follow (before: one offset above / below), level shown by the page = middle of the trace; Raw AUTO with a
  *      middle of half a count (-2.5): whole count -2 as the page shows it (before: level -2.5, page -2, register -3);
  *      half counts written by a remote client rounded as the page (Math.round); 12.16: the volts AUTO Y range in V with a
- *      normalized full scale other than 1 V (0.6543 V here: calib.c defaults; counts / 8192 before, x max_adc_norm now).
+ *      normalized full scale other than 1 V (0.6543 V here: EEPROM image of sim_eeprom_make(); counts / 8192 before, x max_adc_norm now).
+ *      v2.0.12 (port of lock_in+pid 2.2.17, 11.17-11.22): Measure in Raw Mode without the calibration correction (raw integers), in volts
+ *      with it; scale of the signal of the scope channel (src/sig_scale.h): ctrl_A with the DAC full scale, in2 on CH1 with
+ *      the range of IN2; the read-only calib_* params of the page. Build 35 (11.22): references and Ramp A nominal 1 V.
  *
  * Build and run: test/auto_set_c_sim/run.sh [src dir]     (exit code 1 if a check fails)
  */
@@ -73,6 +76,38 @@
 /* ---------------------------------------------------------------- /dev/mem as plain memory */
 #define FAKE_FD 900
 static volatile osc_fpga_reg_mem_t *osc = NULL;
+
+/* v2.0.12: EEPROM image for src/calib.c (fake_hw.h maps its fopen() here). calib.c has nominal defaults now (1 V /
+ * 20 V, offset 0): the image holds the defaults of calib.c up to 2.0.11 (apps-free 0.9x), with which sections 5 and
+ * 11 were written: LV 0.6543 V (28101971), HV 14.56 V (625682246), offset at 0x18 / 0x1c = -585 (old layout without
+ * magic: one offset for LV and HV; v2.0.12 subtracts it as the official library, so the correction is +585 as
+ * before), DAC 1 V, DAC offsets 0 (0x3eac of the old defaults is beyond the sanity limit; the AWG is not used). */
+static char sim_eeprom[64] = "";
+static void sim_eeprom_make(void)
+{
+    unsigned char img[0x40];
+    uint32_t w[10] = { 28101971, 28101971, 625682246, 625682246, (uint32_t)-585, (uint32_t)-585,
+                       42949672, 42949672, 0, 0 };
+    int fd, i;
+    memset(img, 0, sizeof(img));
+    for(i = 0; i < 10; i++) {
+        img[8 + 4*i] = w[i] & 0xff;         img[9 + 4*i]  = (w[i] >> 8) & 0xff;
+        img[10 + 4*i] = (w[i] >> 16) & 0xff; img[11 + 4*i] = (w[i] >> 24) & 0xff;
+    }
+    strcpy(sim_eeprom, "/tmp/auto_set_c_sim_eeprom_XXXXXX");
+    fd = mkstemp(sim_eeprom);
+    if(fd < 0 || write(fd, img, sizeof(img)) != (ssize_t)sizeof(img)) {
+        printf("FAIL: can not write the EEPROM image\n");
+        exit(1);
+    }
+    close(fd);
+}
+FILE *fake_fopen(const char *path, const char *mode)
+{
+    if(strcmp(path, "/sys/bus/i2c/devices/0-0050/eeprom") == 0)
+        path = sim_eeprom;
+    return fopen(path, mode);
+}
 
 int fake_open(const char *path, int flags, ...)
 {
@@ -100,7 +135,7 @@ static double now_s(void);
 static void ring_tick(void);
 /* v2.3.18: 1 = "noise" instead of the sine: +-100 counts of white noise plus a 1200-count component with a period
  * of 12.4 samples (99 ns), as the "period" of ~93 ns that the auto-set found in the noise on the board. -585: the
- * default fe dc offset (calib.c, no EEPROM here), so that the corrected signal is centred at 0 (the period search
+ * fe dc offset of the EEPROM image of sim_eeprom_make(), so that the corrected signal is centred at 0 (the period search
  * of the auto-set compares raw samples with thresholds of corrected values: the amplitude must exceed the offset) */
 static volatile int sig_noise = 0;
 /* v2.0.9: amplitudes of the positive / negative half of the sine (3005: middle of half a count), and a log of the armed
@@ -628,6 +663,7 @@ int main(void)
     double dt;
 
     setvbuf(stdout, NULL, _IOLBF, 0);
+    sim_eeprom_make();
     if(rp_app_init() < 0) {
         printf("FAIL rp_app_init\n");
         return 1;
@@ -812,7 +848,7 @@ int main(void)
               abs(THR(osc->cha_thr) - (int)lroundf(get("trig_level"))) <= 1, "cha_thr %d, level %g",
               THR(osc->cha_thr), get("trig_level"));
         /* v2.0.9: the AUTO threshold at the middle of the signal in both modes, with the calibration offset of in1
-         * (585: calib.c defaults; RP2's offsets are 0). Sine +-3000 raw counts on CH1 (in1): middle 0 raw, +585 corrected.
+         * (585: EEPROM image of sim_eeprom_make(); RP2's offsets are 0). Sine +-3000 raw counts on CH1 (in1): middle 0 raw, +585 corrected.
          * The period search of the AUTO is its first acquisition with a trigger source other than immediate (1) after its
          * immediate ones (the scope may still acquire in Auto with the level of before when the POST arrives). */
         {
@@ -883,6 +919,46 @@ int main(void)
                 check("12.15 Raw: levels with a fraction (remote client) -> threshold = Math.round as the page (-2.5 -> -2; before: -3)",
                       okh, "%s", msg);
             }
+        }
+        /* v2.0.12 (lock_in+pid 2.2.17): Measure in Raw Mode = the raw integers (it added the calibration correction: Avg +146
+         * with the trace at -63 on RP2), and the scale of the signal of each scope channel (src/sig_scale.h) */
+        {
+            float mx, mn, fs_in1 = 28101971 / 4294967296.0f * 100;   /* IN1 LV of the image: 0.6543 V */
+            post("trig_mode", 0.0, "trig_level", 0.0, "lock_oscA_sw", 1.0, "lock_oscB_sw", 2.0, "lock_osc_raw_mode", 1.0, NULL);
+            usleep(400000);
+            mx = get("meas_max_ch1"); mn = get("meas_min_ch1");
+            check("11.17 Raw Mode Measure of in1 (correction 585): max / min of the raw sine +3000 / -3000 (before: +3585 / -2415)",
+                  fabsf(mx - 3000) <= 5 && fabsf(mn + 3000) <= 5, "max %g, min %g, avg %g", mx, mn, get("meas_avg_ch1"));
+            post("lock_osc_raw_mode", 0.0, NULL);
+            usleep(400000);
+            mx = get("meas_max_ch1");
+            check("11.18 volts Measure of in1: max = (3000 + 585) x 0.6543 V / 8192 (correction kept in volts)",
+                  fabsf(mx - 3585 * fs_in1 / 8192) <= 5 * fs_in1 / 8192, "max %.5f V, expected %.5f V", mx, 3585 * fs_in1 / 8192);
+            post("lock_oscA_sw", 4.0, "lock_out1_sw", 12.0, NULL);   /* ctrl_A on OUT1: DAC 1 V of the image, offset 0 */
+            usleep(400000);
+            mx = get("meas_max_ch1");
+            check("11.19 CH1 = ctrl_A: full scale of the DAC (1 V; it was the IN1 one, 0.6543 V): scale_ch1 = 1 / 0.6543, max = 3000 / 8192 V",
+                  fabsf(get("scale_ch1") - 1 / fs_in1) < 1e-3 && fabsf(mx - 3000.0f / 8192) <= 5.0f / 8192,
+                  "scale_ch1 %.5f, max %.5f V", get("scale_ch1"), mx);
+            post("lock_oscA_sw", 2.0, "gain_ch1", 1.0, "gain_ch2", 0.0, NULL);   /* CH1 = in2, IN1 HV, IN2 LV */
+            usleep(200000);
+            check("11.20 CH1 = in2 with IN1 HV / IN2 LV: full scale of IN2 LV (scale_ch1 1; it took gain_ch1: 14.56 / 0.6543)",
+                  fabsf(get("scale_ch1") - 1) < 1e-4, "scale_ch1 %.5f", get("scale_ch1"));
+            check("11.21 read-only calib_* of the page: IN1 LV 0.6543 V, HV 14.56 V, correction 585, OUT1 1 V offset 0",
+                  fabsf(get("calib_in1_lv") - fs_in1) < 1e-4 && fabsf(get("calib_in1_hv") - 14.568f) < 1e-2 &&
+                  get("calib_in1_offs_lv") == 585 && get("calib_in1_offs_hv") == 585 && fabsf(get("calib_out1_fs") - 1) < 1e-6 &&
+                  get("calib_out1_offs") == 0, "in1 %g / %g V, offs %g / %g, out1 %g V offs %g", get("calib_in1_lv"),
+                  get("calib_in1_hv"), get("calib_in1_offs_lv"), get("calib_in1_offs_hv"), get("calib_out1_fs"), get("calib_out1_offs"));
+            /* build 35 of lock_in+pid: references and the output-chain signals other than ctrl_A / ctrl_B: nominal 8192 counts = 1 V */
+            post("lock_oscA_sw", 12.0, "gain_ch1", 0.0, "lock_out1_sw", 0.0, NULL);   /* sq_ref (scope 12 in this App), not routed */
+            usleep(200000);
+            mx = get("scale_ch1");
+            post("lock_oscA_sw", 6.0, "lock_out1_sw", 12.0, NULL);                    /* Ramp A, ctrl_A on OUT1 */
+            usleep(200000);
+            check("11.22 CH1 = sq_ref not routed / Ramp A: nominal 1 V (scale_ch1 1 / 0.6543; the references took the internal factor up to build 34 of lock_in+pid)",
+                  fabsf(mx - 1 / fs_in1) < 1e-3 && fabsf(get("scale_ch1") - 1 / fs_in1) < 1e-3, "sq_ref %.5f, ramp_A %.5f", mx, get("scale_ch1"));
+            post("lock_oscA_sw", 1.0, "gain_ch1", 0.0, "lock_out1_sw", 0.0, NULL);
+            usleep(100000);
         }
         /* back to volts */
         post("lock_osc_raw_mode", 0.0, "trig_mode", 0.0, "trig_level", 0.0, NULL);
@@ -1241,5 +1317,6 @@ only9:
     fpga_run = 0;
     pthread_join(th, NULL);
     printf("%d OK, %d FAIL\n", oks, fails);
+    unlink(sim_eeprom);
     _exit(fails ? 1 : 0);     /* no rp_app_exit(): it would look for streaming processes in /proc */
 }

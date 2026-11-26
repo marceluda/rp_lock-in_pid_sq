@@ -49,7 +49,7 @@ typedef struct rp_osc_meas_res_s {
 /* Parameters indexes - these defines should be in the same order as
  * rp_app_params_t structure defined in main.c */
 //define PARAMS_NUM        81
-#define PARAMS_NUM        202   /* v2.0.3: + 4 read-only scope state params (SCOPE_GEN_PARAM ...) */
+#define PARAMS_NUM        215   /* v2.0.3: + 4 read-only scope state params (SCOPE_GEN_PARAM ...); v2.0.12: + calib_status, + 12 calib_* */
 #define MIN_GUI_PARAM     0
 #define MAX_GUI_PARAM     1
 #define TRIG_MODE_PARAM   2
@@ -269,6 +269,20 @@ typedef struct rp_osc_meas_res_s {
 #define SCOPE_ACQ_STATE_PARAM  199
 #define SCOPE_ACQ_GEN_PARAM    200
 #define SIG_GEN_PARAM          201
+#define CALIB_STATUS_PARAM     202   /* v2.0.12: 0 user zone, 1 factory zone, 2 nominal (src/calib.h) */
+/* v2.0.12: calibration for the display of the page (read only, see main.c) */
+#define CALIB_IN1_LV_PARAM       203
+#define CALIB_IN1_HV_PARAM       204
+#define CALIB_IN2_LV_PARAM       205
+#define CALIB_IN2_HV_PARAM       206
+#define CALIB_IN1_OFFS_LV_PARAM  207
+#define CALIB_IN1_OFFS_HV_PARAM  208
+#define CALIB_IN2_OFFS_LV_PARAM  209
+#define CALIB_IN2_OFFS_HV_PARAM  210
+#define CALIB_OUT1_FS_PARAM      211
+#define CALIB_OUT2_FS_PARAM      212
+#define CALIB_OUT1_OFFS_PARAM    213
+#define CALIB_OUT2_OFFS_PARAM    214
 
 
 /* Defines from which parameters on are AWG parameters (used in set_param() to

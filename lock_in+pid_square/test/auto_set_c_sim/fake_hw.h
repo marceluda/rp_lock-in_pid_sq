@@ -13,4 +13,9 @@ int   fake_munmap(void *addr, size_t len);
 #define close  fake_close
 #define mmap   fake_mmap
 #define munmap fake_munmap
+/* v2.0.12: the EEPROM (src/calib.c) is an image written by harness.c (old layout, the apps-free defaults of 2.3.32:
+ * 0.6543 V / 14.56 V, offset correction +585), so that the tests keep a calibration offset and a full scale != 1 V */
+#include <stdio.h>
+FILE *fake_fopen(const char *path, const char *mode);
+#define fopen  fake_fopen
 #endif

@@ -16,7 +16,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Square lock-in+PID (v2.0.10)</title>
+  <title>Square lock-in+PID (v2.0.12)</title>
   <link href="../assets/bootstrap-3.0.0/css/bootstrap.css" rel="stylesheet" type="text/css">
   <link href="../assets/style.css?6" rel="stylesheet" type="text/css">
   <script src="../assets/bootstrap-3.0.0/js/jquery.js"></script>
@@ -273,7 +273,11 @@
                            'meas_min_ch2,meas_max_ch2,meas_amp_ch2,meas_avg_ch2,meas_freq_ch2,meas_per_ch2,'+
                            'lock_sqX,lock_sqY,lock_sqF,lock_error_mean,lock_error_std,'+
                            'lock_lock_status,lock_lock_control,lock_stream_status,'+
-                           'scope_gen,scope_acq_state,scope_acq_gen,sig_gen').split(',');  // v2.0.3: read-only scope state (lock_in+pid_harmonic 2.3.23)
+                           'scope_gen,scope_acq_state,scope_acq_gen,sig_gen,'+  // v2.0.3: read-only scope state (lock_in+pid_harmonic 2.3.23)
+                           'calib_status,'+  // v2.0.12: calibration in use (0 user zone, 1 factory zone, 2 nominal)
+                           // v2.0.12: calibration values for the display ([CALIB DISPLAY])
+                           'calib_in1_lv,calib_in1_hv,calib_in2_lv,calib_in2_hv,calib_in1_offs_lv,calib_in1_offs_hv,'+
+                           'calib_in2_offs_lv,calib_in2_offs_hv,calib_out1_fs,calib_out2_fs,calib_out1_offs,calib_out2_offs').split(',');
   // v2.3.18: read-only params of the server (src/main.c, read_only = 1: rp_set_params() ignores them). The send_all
   // of a Config -> load sent the ones in params.local (meas_*, lock_sqX/sqY, lock_lock_status, lock_lock_control...,
   // copied there from display_keep_keys): they only made the POSTs bigger. Never sent by a send_all now.
@@ -458,7 +462,7 @@
     return true;
   }
   // [FORCEX END]
-  last_disp_units=false;
+  last_disp_units=false;   // v2.0.12: Raw Mode of the last display_update() (labels "X [int]" ... shown)
   lasttsp=Math.floor((new Date().getTime())/1000);
   last_unit_mode = 0 ;
 
@@ -598,8 +602,10 @@
         var tlev = parseLocalFloat($(this).val());
         if(! isNaN(tlev)) {
           // v2.0.8: V, or ADC counts in Raw Mode (see [RAW TRIGGER]), limited to the range of the scope (the field
-          // shows the limited value)
-          params.local.trig_level = pageToTrigLevel(tlev, params.local, params.original);
+          // shows the limited value). v2.0.12 (lock_in+pid 2.2.17 build 36): the field shows the level rounded
+          // (trigLevelText()): the same value keeps the level as it is (not the rounded value)
+          if(tlev !== Number(trigLevelText(params.local.trig_level, params.local)))
+            params.local.trig_level = pageToTrigLevel(tlev, params.local, params.original);
           $(this).val(floatToLocalString(trigLevelText(params.local.trig_level, params.local)));
           updateTriggerSlider(undefined, false);
           redrawPlot();
@@ -2118,11 +2124,15 @@
     lock_ramp_hig_lim  = parseLocalFloat( lock_ramp_hig_lim_arr[0]  ) ;
     lock_ramp_B_factor = parseLocalFloat( lock_ramp_B_factor_arr[0] ) ;
 
+    // v2.0.12: scale of Ramp A ([CALIB DISPLAY]: nominal 8192 counts = 1 V since build 35; null in the node sims without it:
+    // 8192 counts = 1 V as before)
+    var cs = (typeof calibSigScale === 'function' && params.local) ? calibSigScale(params.local, 'ramp_A') : null;
+
     if( lock_ramp_low_lim_arr.length === 2) {
       if ( lock_ramp_low_lim_arr[1].toLowerCase()=="v" )
-        lock_ramp_low_lim = Math.round( lock_ramp_low_lim * 8192 );
+        lock_ramp_low_lim = (cs ? calibToCounts(lock_ramp_low_lim, cs) : Math.round( lock_ramp_low_lim * 8192 ));
       if ( lock_ramp_low_lim_arr[1].toLowerCase()=="mv" )
-        lock_ramp_low_lim = Math.round( lock_ramp_low_lim * 8192 /1000 );
+        lock_ramp_low_lim = (cs ? calibToCounts(lock_ramp_low_lim / 1000, cs) : Math.round( lock_ramp_low_lim * 8192 /1000 ));
       lock_ramp_low_lim = Math.min(  8191 , lock_ramp_low_lim  ) ;
       lock_ramp_low_lim = Math.max( -8192 , lock_ramp_low_lim  ) ;
       $("#lock_ramp_low_lim").val(""+lock_ramp_low_lim);
@@ -2130,9 +2140,9 @@
 
     if( lock_ramp_hig_lim_arr.length === 2) {
       if ( lock_ramp_hig_lim_arr[1].toLowerCase()=="v" )
-        lock_ramp_hig_lim = Math.round( lock_ramp_hig_lim * 8192 );
+        lock_ramp_hig_lim = (cs ? calibToCounts(lock_ramp_hig_lim, cs) : Math.round( lock_ramp_hig_lim * 8192 ));
       if ( lock_ramp_hig_lim_arr[1].toLowerCase()=="mv" )
-        lock_ramp_hig_lim = Math.round( lock_ramp_hig_lim * 8192 /1000 );
+        lock_ramp_hig_lim = (cs ? calibToCounts(lock_ramp_hig_lim / 1000, cs) : Math.round( lock_ramp_hig_lim * 8192 /1000 ));
       lock_ramp_hig_lim = Math.min(  8191 , lock_ramp_hig_lim  ) ;
       lock_ramp_hig_lim = Math.max( -8192 , lock_ramp_hig_lim  ) ;
       $("#lock_ramp_hig_lim").val(""+lock_ramp_hig_lim);
@@ -2179,12 +2189,20 @@
 
     $('#lock_ramp_step_text').html( txt   );
 
+    if(cs) {   // v2.0.12: calibrated (DAC of Ramp A, offset if its ctrl_A is the output), counts in Raw Mode
+      $('#lock_ramp_low_lim_text').html( "<small><b>" + calibMvText(lock_ramp_low_lim, cs, 0) + "</b></small>" );
+      $('#lock_ramp_hig_lim_text').html( "<small><b>" + calibMvText(lock_ramp_hig_lim, cs, 0) + "</b></small>" );
+      txt  =  "<p><b>" + calibSfx(calibMvText(lock_ramp_hig_lim - lock_ramp_low_lim, cs, 0, true), "pp") + "</b>" ;
+      txt +=  " <br> " ;
+      txt +=  "<b>" + calibSfx(calibMvText((lock_ramp_hig_lim + lock_ramp_low_lim)/2, cs, 1), "dc") + "</b></p>" ;
+    } else {
     $('#lock_ramp_low_lim_text').html( "<small><b>" + toFixedNz(lock_ramp_low_lim/8192*1000, 0) + "&nbsp;mV</b></small>" );
     $('#lock_ramp_hig_lim_text').html( "<small><b>" + toFixedNz(lock_ramp_hig_lim/8192*1000, 0) + "&nbsp;mV</b></small>" );
 
     txt  =  "<p><b>" + toFixedNz( (lock_ramp_hig_lim - lock_ramp_low_lim)/8192*1000, 0 ) + "&nbsp;mVpp</b>" ;
     txt +=  " <br> " ;
     txt +=  "<b>" + toFixedNz( (lock_ramp_hig_lim + lock_ramp_low_lim)/2/8192*1000, 1 ) + "&nbsp;mVdc</b></p>" ;
+    }
     $('#lock_ramp_text').html( txt );
 
     $('#lock_ramp_B_factor_text').html( "<small><b>" + (lock_ramp_B_factor/4096).toFixed(5) + "</b></small>" );
@@ -2246,11 +2264,15 @@
     pidA_kd = parseInt( lock_pidA_kd_arr[0] ) ;
 
     // If there is a text that sets units, process the correct unit and number value
+    // v2.0.12: scale of the input of PID A ([CALIB DISPLAY]; null in the node sims without it)
+    var cs = (typeof calibSigScale === 'function' && params.local) ? calibSigScale(params.local, 'pidA_in') : null;
     if( lock_pidA_sp_arr.length === 2) {
+      // the number with its decimals (parseInt above: "0.5 V" was 0 V)
+      var sp_v = parseLocalFloat( lock_pidA_sp_arr[0] );
       if ( lock_pidA_sp_arr[1].toLowerCase()=="v" )
-        pidA_sp = Math.round( pidA_sp * 8192 );
+        pidA_sp = (cs ? calibToCounts(sp_v, cs) : Math.round( sp_v * 8192 ));
       if ( lock_pidA_sp_arr[1].toLowerCase()=="mv" )
-        pidA_sp = Math.round( pidA_sp * 8192 /1000 );
+        pidA_sp = (cs ? calibToCounts(sp_v / 1000, cs) : Math.round( sp_v * 8192 /1000 ));
       pidA_sp = Math.min(  8191 , pidA_sp  ) ;
       pidA_sp = Math.max( -8192 , pidA_sp  ) ;
       $("#lock_pidA_sp").val(""+pidA_sp);
@@ -2315,8 +2337,12 @@
     $('#lock_pidA_kp_text').html( '<div class="col-xs-12" ><small><b>'+txt+'</b></small></div>'   );
 
     // set - point
+    if(cs) {   // v2.0.12: calibrated (scale of the PID input; counts in Raw Mode). It was / 8191
+      $('#lock_pidA_sp_text').html( "<small><b>" + calibMvText(pidA_sp, cs, 2) + "</b></small>" );
+    } else {
     setpoint=Math.round(pidA_sp / 8191*1000*100 )/100 ;
     $('#lock_pidA_sp_text').html( "<small><b>"+setpoint.toFixed(2)+"&nbsp;mV</b></small>"   );
+    }
 
   }
 
@@ -2353,11 +2379,15 @@
     pidB_kd = parseInt( lock_pidB_kd_arr[0] ) ;
 
     // If there is a text that sets units, process the correct unit and number value
+    // v2.0.12: scale of the input of PID B ([CALIB DISPLAY]; null in the node sims without it)
+    var cs = (typeof calibSigScale === 'function' && params.local) ? calibSigScale(params.local, 'pidB_in') : null;
     if( lock_pidB_sp_arr.length === 2) {
+      // the number with its decimals (parseInt above: "0.5 V" was 0 V)
+      var sp_v = parseLocalFloat( lock_pidB_sp_arr[0] );
       if ( lock_pidB_sp_arr[1].toLowerCase()=="v" )
-        pidB_sp = Math.round( pidB_sp * 8192 );
+        pidB_sp = (cs ? calibToCounts(sp_v, cs) : Math.round( sp_v * 8192 ));
       if ( lock_pidB_sp_arr[1].toLowerCase()=="mv" )
-        pidB_sp = Math.round( pidB_sp * 8192 /1000 );
+        pidB_sp = (cs ? calibToCounts(sp_v / 1000, cs) : Math.round( sp_v * 8192 /1000 ));
       pidB_sp = Math.min(  8191 , pidB_sp  ) ;
       pidB_sp = Math.max( -8192 , pidB_sp  ) ;
       $("#lock_pidB_sp").val(""+pidB_sp);
@@ -2422,8 +2452,12 @@
     $('#lock_pidB_kp_text').html( '<div class="col-xs-12" ><small><b>'+txt+'</b></small></div>'   );
 
     // set - point
+    if(cs) {   // v2.0.12: calibrated (scale of the PID input; counts in Raw Mode). It was / 8191
+      $('#lock_pidB_sp_text').html( "<small><b>" + calibMvText(pidB_sp, cs, 2) + "</b></small>" );
+    } else {
     setpoint=Math.round(pidB_sp / 8191*1000*100 )/100 ;
     $('#lock_pidB_sp_text').html( "<small><b>"+setpoint.toFixed(2)+"&nbsp;mV</b></small>"   );
+    }
 
   }
 
@@ -2490,20 +2524,34 @@
     return Math.min(4294967295, Math.round(v));
   }
 
-  function parseTrigLevel(str) {
+  // v2.0.12: s = scale of the signal of the level trigger ([CALIB DISPLAY] calibSigScale(); a V / mV value
+  // is converted with it, offset included). Without s: 8192 counts = 1 V (lock_trig_level_units)
+  function parseTrigLevel(str, s) {
     var v = parseUnitValue(str, lock_trig_level_units);
     if(!isFinite(v)) return NaN;
+    if(s) {
+      var volts = parseUnitValue(str, { 'v': 1, 'mv': 1e-3 });   // NaN for counts / no unit
+      if(isFinite(volts)) v = volts * 8192 / s.k - s.c;
+    }
     return Math.max(-8192, Math.min(8191, Math.round(v)));
+  }
+  // scale of the signal of the level trigger (lock_lock_trig_sw), null without [CALIB DISPLAY] (node sims)
+  function lockTrigScale() {
+    return (typeof calibSigScale === 'function' && params.local) ?
+           calibSigScale(params.local, calibSigOfTrig(params.local.lock_lock_trig_sw)) : null;
   }
 
   // Number inputs (input_number) whose text is converted by a parser (units): see numberInputValue()
-  var input_unit_parsers = { lock_lock_trig_time_val: parseTrigTime, lock_lock_trig_val: parseTrigLevel,
+  var input_unit_parsers = { lock_lock_trig_time_val: parseTrigTime,
+                             // v2.0.12: V / mV with the calibration of the trigger signal
+                             lock_lock_trig_val: function(str) { return parseTrigLevel(str, (typeof lockTrigScale === 'function') ? lockTrigScale() : null); },
                              // v2.0.10 (from lock_in+pid_plus 2.2.0-rc2): Ramp period in steps or "10 ms" (late binding:
                              // rampStepParseField() is in [RAMP UI])
                              lock_ramp_step: function(str) { return rampStepParseField(str); } };
 
   // Last values shown by lock_ctrl_update() (they were implicit globals, created by its first call)
   var trig_time, trig_val, aux_trig_type;
+  var calib_display_key = '';   // v2.0.12: calibDisplayKey() of the labels shown (loadParams())
 
   // v2.3.16: value of a number input (input_number) to send, NaN if empty or not valid (then it is not sent and the
   // last value is restored). parseLocalFloat('') is 0: an emptied field (or an invalid text in an <input
@@ -2618,7 +2666,8 @@
     // of "20 s" used to be compared with trig_time (in ticks) before the conversion. The fields are rewritten in
     // register units only when the edit ends (numberInputBlur()), not while typing ("20 m" on the way to "20 ms").
     var t_new = parseTrigTime( $("#lock_lock_trig_time_val").val() );
-    var v_new = parseTrigLevel( $("#lock_lock_trig_val").val() );
+    var cs = (typeof lockTrigScale === 'function') ? lockTrigScale() : null;   // v2.0.12
+    var v_new = parseTrigLevel( $("#lock_lock_trig_val").val(), cs );
     lock_ctrl_aux_trig_type     = parseInt($("#lock_ctrl_aux_trig_type" ).val());
 
     if (params) if (params.local)
@@ -2647,7 +2696,9 @@
     $('#lock_lock_trig_time_val_text').html( txt   );
 
     if ( isNaN(trig_val) )
-      $('#lock_lock_trig_val_text').html( "<small class=\"text-danger\">? counts (1 V = 8192) or a voltage with units: V, mV</small>" ) ;
+      $('#lock_lock_trig_val_text').html( "<small class=\"text-danger\">? counts or a voltage with units: V, mV</small>" ) ;
+    else if(cs)   // v2.0.12: calibrated (scale of the trigger signal), counts in Raw Mode
+      $('#lock_lock_trig_val_text').html( "<small><b>V<sub>trg</sub>&nbsp;=&nbsp;" + calibMvText(trig_val, cs, 0) + "</b></small>" ) ;
     else
       $('#lock_lock_trig_val_text').html( "<small><b>V<sub>trg</sub>&nbsp;=&nbsp;" + toFixedNz(trig_val/8192*1000, 0) + "&nbsp;mV</b></small>" ) ;
 
@@ -2740,8 +2791,13 @@
 
 
     // v2.0.0: sq?_28 = mean(+-signal_i) * 2^13 (counts * 8192); 8192 counts = 1 V
+    // v2.0.12: volts with the input calibration of the lock-in input ([CALIB DISPLAY] 'lockin': IN1 / IN2 / mean by
+    // lock_signal_sw, other sources (sq_ref, sq_quad, sq_phas, aux_A, Ramp A) nominal; before: always 8192 counts = 1 V),
+    // the same for sqX, sqY, R and sqF. Raw Mode: the integers of the FPGA (lock_sqX, lock_sqY, lock_sqF, 28 bits) as
+    // they are (it was / 8192)
     var scl = 1/8192/8192;
-    if(set_raw) scl = 1/8192;
+    if(typeof calibSigScale === 'function') scl = calibSigScale(params.local, 'lockin').k / 8192 / 8192;
+    if(set_raw) scl = 1;
 
     if(disp_slow){
       var X = display_val('lock_sqX')*scl ;
@@ -2751,11 +2807,11 @@
       var Fi= Math.atan2(Y,X)*180/Math.PI ;
 
       if(set_raw){
-        fixn=3;
+        fixn=0;   // v2.0.12: integers (R rounded); phase as before
         $('#disp_x' ).html(  X.toFixed(fixn) );
         $('#disp_y' ).html(  Y.toFixed(fixn) );
         $('#disp_r' ).html(  R.toFixed(fixn) );
-        $('#disp_fi').html(  Fi.toFixed(2+fixn));
+        $('#disp_fi').html(  Fi.toFixed(5));
         $('#disp_F' ).html(  F.toFixed(fixn));
       }else{
         var fv0 = Math.max( String(display_val('lock_sqX')).length , String(display_val('lock_sqY')).length )  ;
@@ -2805,7 +2861,9 @@
     $('#disp_error_mean' ).html( error_mean );
     $('#disp_error_std'  ).html( error_std );
 
-    last_disp_units=$('#btn_disp_units').data('checked');
+    // v2.0.12 (lock_in+pid 2.2.17 build 36, bug 10): the Raw Mode of this update. It read $('#btn_disp_units').data('checked'), a button
+    // that does not exist (undefined): after Raw Mode on -> off the titles stayed "X [int]", "Y [int]" ...
+    last_disp_units = !!set_raw;
 
   }
 
@@ -3351,9 +3409,10 @@
     return Math.min(4294967295, Math.max(0, cycles));
   }
 
-  // Level trigger (lock_trig_val, -8192..8191) of a click: y in V (1 V = 8192) or in counts in raw mode
-  function clickToTrigLevel(y, raw_mode) {
-    var v = Math.round(Number(raw_mode) ? Number(y) : Number(y) * 8192);
+  // Level trigger (lock_trig_val, -8192..8191) of a click: y in V (1 V = 8192) or in counts in raw mode.
+  // v2.0.12: s = scale of the trigger signal ({ k, c }, [CALIB DISPLAY]): y in V -> y * 8192 / k - c
+  function clickToTrigLevel(y, raw_mode, s) {
+    var v = Math.round(Number(raw_mode) ? Number(y) : (s ? Number(y) * 8192 / s.k - s.c : Number(y) * 8192));
     if(!isFinite(v)) return null;
     return Math.min(8191, Math.max(-8192, v));
   }
@@ -3395,9 +3454,18 @@
   // text of the Level field: whole counts in Raw Mode, V as before. v2.0.9: Math.round (halves upwards) is also the
   // rounding of the controller (src/fpga.c osc_fpga_cnv_cnt_to_trig_v(): floor(x + 0.5), it was roundf(): -2.5 -> -3
   // while the field showed -2), and the AUTO gives whole counts in Raw Mode (it gave half counts)
+  // v2.0.12: in volts rounded to trigLevelDecimals() (it showed 0,249999689324: trig_level is the page
+  // value / scale, back * scale). Display only: the param keeps its value (blur handler: the same text, the same level)
   function trigLevelText(level, p) {
     var v = trigLevelToPage(level, p);
-    return trigRaw(p) ? Math.round(v) : v;
+    return trigRaw(p) ? Math.round(v) : Number(v.toFixed(trigLevelDecimals(p)));
+  }
+  // decimals of the level in volts: one more than the step of one ADC count (full scale +-gui_reset_y_range/2, page
+  // units) needs: 5 with +-1.08 V (0,24414 V = 1852 counts), 4 with a probe x10 / HV (+-10.8 V)
+  function trigLevelDecimals(p) {
+    var y = Number(p && p.gui_reset_y_range) / 2;
+    if(!(y > 0) || !isFinite(y)) y = 1;
+    return Math.max(0, Math.min(12, Math.ceil(-Math.log10(y / 8192)) + 1));
   }
   // trig_level when Raw Mode is switched (counts <-> normalized V), so the scope triggers at about the same point:
   // counts = V_norm * 8192 / max_norm, with max_norm = (gui_reset_y_range / 2) / max(scale_ch1, scale_ch2), the ADC
@@ -3415,6 +3483,146 @@
     return to_raw ? Math.max(-8192, Math.min(8191, Math.round(v * k))) : v / k;
   }
   // [RAW TRIGGER END]
+
+  // [CALIB DISPLAY BEGIN] v2.0.12 (port of lock_in+pid_harmonic 2.3.33 = lock_in+pid 2.2.17, final rule of the user: its
+  // build 35) (pure functions, also run by test/calib_display_sim.js): calibration in the display of the page. The FPGA
+  // always gets the same integers: only what the page shows (and the integer that a voltage typed with units gives) uses
+  // the calibration. Same rules as src/sig_scale.h (the scope traces, Measure and trigger, computed by the controller); a
+  // value n of a signal is shown as V = (n + c) * k / 8192, k = volts of 8192 counts, c = correction in counts:
+  //  - in1 / in2: full scale of that input in its range (gain_ch1 / gain_ch2 = jumper of IN1 / IN2) times its probe
+  //    attenuation, c = ADC offset correction of that input and range ('input');
+  //  - in1-in2 (level trigger 9): the mean of the IN1 / IN2 full scales of the range in use (x probe); IN1 and IN2 in
+  //    different range or probe: mean of the LV full scales (approximate). c = 0 ('mean');
+  //  - 'lockin' (the displays sqX, sqY, R, sqF of the square lock-in): input calibration of the lock-in input
+  //    (lock_signal_sw): in1 -> IN1 full scale (range x probe), in2 -> IN2, in1-in2 -> the mean; c = 0 (demodulated
+  //    values); other sources (sq_ref, sq_quad, sq_phas, aux_A, Ramp A) nominal;
+  //  - ctrl_A / ctrl_B (scope 4 / 5, level trigger 12 / 13): full scale of the DAC of the output they go to; routed
+  //    directly (lock_out1_sw / lock_out2_sw 12 / 13, first OUT1): that DAC, c = -DAC offset (volts at the connector);
+  //    not routed: the DAC where another signal of its chain is routed, else OUT1 for ctrl_A / OUT2 for ctrl_B, c = 0
+  //    ('out');
+  //  - out1 / out2 (scope 19 / 20, the integer of the DAC of OUT1 / OUT2): that DAC, c = -its offset ('out');
+  //  - everything else (error, sqXo, sqYo, sqFo, signal_i traces, PID inputs and set points, Ramp A / B, PID A / B out,
+  //    aux_A / aux_B, the square references sq_ref, sq_quad, sq_phas routed or not): NOMINAL factory conversion, 8192
+  //    counts = 1 V, c = 0, on every board ('nom'). So ctrl = ramp + PID out holds in counts, not exactly in volts.
+  //  - PID inputs in1 / in2 / in1-in2 (lock_pidA_sw / lock_pidB_sw 7 / 8 / 6): nominal for now (as lock_in+pid and
+  //    lock_in+pid_harmonic); lock_in+pid_plus gives them the input calibration. PENDING DECISION of the user: ONE-LINE
+  //    SWITCH calib_pid_in_calib below (the controller has the same switch: RP_SIG_PID_IN_CALIB of src/sig_scale.h; both
+  //    must be changed together, test/calib_display_sim.js checks it).
+  // Differences / amplitudes (mVpp, Amp. p-p) use k only. Raw Mode (lock_osc_raw_mode): the labels show the integers
+  // ("counts"), no scale, no offset. A voltage typed with units (V, mV) is converted with the scale of its signal in
+  // both modes; a number without units is the integer as it is.
+  // Without the calib_* params (older controller, node sims): nominal values, 8192 counts = 1 V, offsets 0.
+  var calib_pid_in_calib = false;   // ONE-LINE SWITCH: true = PID inputs in1 / in2 / in1-in2 with the input calibration
+  var calib_nominal = { calib_in1_lv: 1, calib_in1_hv: 20, calib_in2_lv: 1, calib_in2_hv: 20,
+                        calib_in1_offs_lv: 0, calib_in1_offs_hv: 0, calib_in2_offs_lv: 0, calib_in2_offs_hv: 0,
+                        calib_out1_fs: 1, calib_out2_fs: 1, calib_out1_offs: 0, calib_out2_offs: 0 };
+  // lock_oscA_sw / lock_oscB_sw -> signal (fpga lock.v i_muxer5_scope1/2: 12 .. 14 sq_ref, sq_quad, sq_phas; 15 .. 17
+  // sqXo, sqYo, sqFo, 18 signal_i: 'int'; 19 / 20 the DACs of OUT1 / OUT2; 21 .. 31 0)
+  var calib_osc_sig = ['zero', 'in1', 'in2', 'int', 'ctrl_A', 'ctrl_B', 'ramp_A', 'ramp_B', 'pidA_in', 'pidB_in',
+                       'pidA_out', 'pidB_out', 'sq_ref', 'sq_quad', 'sq_phas', 'int', 'int', 'int', 'int', 'out1', 'out2',
+                       'zero', 'zero', 'zero', 'zero', 'zero', 'zero', 'zero', 'zero', 'zero', 'zero', 'zero'];
+  // lock_pidA_sw / lock_pidB_sw (lock.v: 0 error, 1 .. 3 sqXo, sqYo, sqFo, 4 signal_i: 'int'; 14, 15: 'zero'); 6 in1-in2,
+  // 7 in1, 8 in2: see calib_pid_in_calib
+  var calib_pid_sig = { 5: 'ramp_A', 9: 'aux_A', 10: 'aux_B', 11: 'sq_ref', 12: 'sq_quad', 13: 'sq_phas', 14: 'zero', 15: 'zero' };
+  var calib_pid_in_sig = { 6: 'in1_in2', 7: 'in1', 8: 'in2' };
+  // lock_lock_trig_sw (lock.v: 0 error, 1 .. 3 sqXo, sqYo, sqFo, 4 signal_i: 'int')
+  var calib_trig_sig = { 5: 'ramp_A', 6: 'aux_A', 7: 'in1', 8: 'in2', 9: 'in1_in2', 10: 'pidA_out', 11: 'pidB_out', 12: 'ctrl_A',
+                         13: 'ctrl_B', 14: 'ramp_B', 15: 'aux_B' };
+  // lock_signal_sw (input of the lock-in) -> signal (only in1, in2, in1-in2 matter: the others are nominal)
+  var calib_signal_sig = { 0: 'in1', 1: 'in2', 2: 'in1_in2' };
+  // lock_out1_sw / lock_out2_sw (lock.v out1_sw_m / out2_sw_m, the same list for both outputs): the signal that is the
+  // integer of the DAC (4 error, 8 sqXo, 9 sqYo: 'int')
+  var calib_out_sig = { 0: 'zero', 1: 'in1', 2: 'in2', 3: 'in1_in2', 5: 'sq_ref', 6: 'sq_quad', 7: 'sq_phas', 10: 'pidA_out',
+                        11: 'pidB_out', 12: 'ctrl_A', 13: 'ctrl_B', 14: 'aux_A', 15: 'aux_B' };
+  var calib_chain = { ctrl_A: 1, ramp_A: 1, pidA_out: 1, aux_A: 1, ctrl_B: 2, ramp_B: 2, pidB_out: 2, aux_B: 2 };
+
+  function calibNum(p, key) {
+    var v = (p ? p[key] : undefined);
+    if(v === undefined || v === null || v === '' || !isFinite(Number(v))) return calib_nominal[key];
+    v = Number(v);
+    if(!/offs/.test(key) && !(v > 0)) return calib_nominal[key];
+    return v;
+  }
+  function calibSigOfOsc(sw) { sw = Math.round(Number(sw)); return (sw >= 0 && sw < calib_osc_sig.length) ? calib_osc_sig[sw] : 'int'; }
+  function calibSigOfPid(sw) {
+    sw = Math.round(Number(sw));
+    if(calib_pid_in_calib && calib_pid_in_sig[sw]) return calib_pid_in_sig[sw];
+    return calib_pid_sig[sw] || 'int';
+  }
+  function calibSigOfTrig(sw) { return calib_trig_sig[Math.round(Number(sw))] || 'int'; }
+  function calibSigOfOut(dac, sw) {
+    var s = calib_out_sig[Math.round(Number(sw))];
+    if(s === undefined) return 'int';
+    return (typeof s === 'string') ? s : s[dac == 2 ? 1 : 0];
+  }
+  // full scale [V] of input 1 / 2, LV (hv false) or HV
+  function calibInFs(p, input, hv) { return calibNum(p, 'calib_in' + input + (hv ? '_hv' : '_lv')); }
+  function calibAtt(v) { return Number(v) > 0 ? 10 : 1; }
+  // mean input full scale (in1-in2)
+  function calibInCommon(p) {
+    var hv1 = Number(p.gain_ch1) != 0, hv2 = Number(p.gain_ch2) != 0, a1 = calibAtt(p.prb_att_ch1), a2 = calibAtt(p.prb_att_ch2);
+    if(hv1 === hv2 && a1 === a2) return (calibInFs(p, 1, hv1) + calibInFs(p, 2, hv1)) / 2 * a1;
+    return (calibInFs(p, 1, false) + calibInFs(p, 2, false)) / 2;
+  }
+  // Scale of a signal (names of the tables above, and 'lockin'): { k: V of 8192 counts, c: counts added, kind: 'input' |
+  // 'mean' | 'out' (ctrl_A / ctrl_B, out1 / out2) | 'nom' (nominal), dac: 1 | 2 (outputs), raw: Raw Mode on }
+  function calibSigScale(p, sig) {
+    p = p || {};
+    var raw = !!Number(p.lock_osc_raw_mode), lockin = false;
+    if(sig === 'pidA_in') sig = calibSigOfPid(p.lock_pidA_sw);   // (all nominal unless calib_pid_in_calib)
+    if(sig === 'pidB_in') sig = calibSigOfPid(p.lock_pidB_sw);
+    if(sig === 'lockin') { sig = calib_signal_sig[Math.round(Number(p.lock_signal_sw))] || 'int'; lockin = true; }
+    if(sig === 'in1' || sig === 'in2') {
+      var i = (sig === 'in1' ? 1 : 2), hv = Number(p['gain_ch' + i]) != 0;
+      return { k: calibInFs(p, i, hv) * calibAtt(p['prb_att_ch' + i]),
+               c: lockin ? 0 : calibNum(p, 'calib_in' + i + '_offs' + (hv ? '_hv' : '_lv')), kind: 'input', dac: 0, raw: raw };
+    }
+    if(sig === 'in1_in2') return { k: calibInCommon(p), c: 0, kind: 'mean', dac: 0, raw: raw };
+    if(sig === 'out1' || sig === 'out2') {   // the DAC of that output, with its offset
+      var o = (sig === 'out1' ? 1 : 2);
+      return { k: calibNum(p, 'calib_out' + o + '_fs'), c: -calibNum(p, 'calib_out' + o + '_offs'), kind: 'out', dac: o, raw: raw };
+    }
+    if(sig === 'ctrl_A' || sig === 'ctrl_B') {
+      var direct = [calibSigOfOut(1, p.lock_out1_sw), calibSigOfOut(2, p.lock_out2_sw)], d, dac = calib_chain[sig];
+      for(d = 1; d <= 2; d++)
+        if(direct[d - 1] === sig)
+          return { k: calibNum(p, 'calib_out' + d + '_fs'), c: -calibNum(p, 'calib_out' + d + '_offs'), kind: 'out', dac: d, raw: raw };
+      for(d = 1; d <= 2; d++) if(calib_chain[direct[d - 1]] === calib_chain[sig]) { dac = d; break; }
+      return { k: calibNum(p, 'calib_out' + dac + '_fs'), c: 0, kind: 'out', dac: dac, raw: raw };
+    }
+    return { k: 1, c: 0, kind: 'nom', dac: 0, raw: raw };   // everything else: nominal 8192 counts = 1 V (lock_in+pid build 35)
+  }
+  // counts -> V (span: a difference / amplitude, no offset) and V -> counts (rounded, not limited)
+  function calibToV(n, s, span) { return (Number(n) + (span ? 0 : s.c)) * s.k / 8192; }
+  function calibToCounts(v, s, span) { return Math.round(Number(v) * 8192 / s.k - (span ? 0 : s.c)); }
+  // label of a value: "123 mV" (digits decimals), or the integer in Raw Mode: "1007 counts"
+  function calibMvText(n, s, digits, span) {
+    if(s.raw) return toFixedNz(n, (Math.round(Number(n)) === Number(n)) ? 0 : 1) + '&nbsp;counts';
+    return toFixedNz(calibToV(n, s, span) * 1000, digits === undefined ? 0 : digits) + '&nbsp;mV';
+  }
+  // v2.0.12: a suffix after the label (pp, dc): "1221 mVpp" as before, "3124 counts pp" in Raw Mode (it
+  // gave "3124 countspp")
+  function calibSfx(txt, sfx) { return (/counts$/.test(String(txt)) ? txt + '&nbsp;' : txt) + sfx; }
+  // value of a field: an integer (counts), or a voltage with units ("500 mV", "0.5 V", decimal point or comma),
+  // converted with the scale s (span: an amplitude). NaN if not valid. Not limited.
+  function calibParseCounts(str, s, span) {
+    var m = String(str === undefined || str === null ? '' : str).trim().replace(',', '.')
+              .match(/^([-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)\s*(mv|v|counts?)?$/i);
+    if(!m) return NaN;
+    var v = parseFloat(m[1]), u = (m[2] || '').toLowerCase();
+    if(!isFinite(v)) return NaN;
+    if(u === 'v' || u === 'mv') return calibToCounts(u === 'mv' ? v / 1000 : v, s, span);
+    return Math.round(v);
+  }
+  // what changes the labels (Raw Mode, calibration, routing, ranges): the page refreshes them when it changes
+  function calibDisplayKey(p) {
+    if(!p) return '';
+    var keys = ['lock_osc_raw_mode', 'gain_ch1', 'gain_ch2', 'prb_att_ch1', 'prb_att_ch2', 'lock_out1_sw', 'lock_out2_sw',
+                'lock_pidA_sw', 'lock_pidB_sw', 'lock_lock_trig_sw', 'lock_signal_sw'];
+    for(var k in calib_nominal) keys.push(k);
+    return keys.map(function(k) { return String(p[k]); }).join(',');
+  }
+  // [CALIB DISPLAY END]
 
   // [RESET ZOOM BEGIN] v2.3.21 (pure functions, also run by test/reset_zoom_sim.js)
   // Decimation of each scope time_range (src/fpga.c, osc_fpga_cnv_time_range_to_dec()) and length of one memory of
@@ -3627,13 +3835,14 @@
     }
     return { amp: amp, off: off };
   }
-  // counts of the Amp. p-p / Offset fields: integer, or with units "500 mV", "0.5 V" (8192 counts = 1 V); NaN if not valid
-  function parseRampCounts(str) {
+  // counts of the Amp. p-p / Offset fields: integer, or with units "500 mV", "0.5 V" (8192 counts = 1 V); NaN if not valid.
+  // v2.0.12: s = scale of Ramp A ({ k, c }, [CALIB DISPLAY]): V -> V * 8192 / k (- c, except span: Amp. p-p)
+  function parseRampCounts(str, s, span) {
     if(str === undefined || str === null) return NaN;
     var m = String(str).trim().replace(',', '.').match(/^([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*(mv|v)?$/i);
     if(!m) return NaN;
     var v = parseFloat(m[1]);
-    if(m[2]) v = v * 8192 / (m[2].toLowerCase() === 'mv' ? 1000 : 1);
+    if(m[2]) v = v / (m[2].toLowerCase() === 'mv' ? 1000 : 1) * 8192 / (s ? s.k : 1) - (s && !span ? s.c : 0);
     return (isFinite(v) ? Math.round(v) : NaN);
   }
   // Hz of the Frequency field ("2.5 kHz", "500 mHz", "1e3", as the Frequency of the lock-in), NaN if not valid or 0
@@ -3787,7 +3996,17 @@
     oom = Math.max(-4, Math.min(4, oom));
     return (v / Math.pow(10, 3 * oom)).toFixed(digits === undefined ? 2 : digits) + '&nbsp;' + units[oom.toString()].replace('&nbsp;', '') + unit;
   }
-  function rampMv(counts, digits) { return toFixedNz(counts / 8192 * 1000, digits === undefined ? 0 : digits) + '&nbsp;mV'; }
+  function rampMv(counts, digits, span) {
+    var cs = rampCalib();   // v2.0.12: calibrated, counts in Raw Mode
+    if(cs) return calibMvText(counts, cs, digits === undefined ? 0 : digits, span);
+    return toFixedNz(counts / 8192 * 1000, digits === undefined ? 0 : digits) + '&nbsp;mV';
+  }
+  // v2.0.12: calibSfx() ("counts pp"), plain suffix without [CALIB DISPLAY] (node sims)
+  function rampSfx(txt, sfx) { return (typeof calibSfx === 'function') ? calibSfx(txt, sfx) : txt + sfx; }
+  // v2.0.12: scale of Ramp A ([CALIB DISPLAY]), null without it (node sims: 8192 counts = 1 V)
+  function rampCalib() {
+    return (typeof calibSigScale === 'function' && params.local) ? calibSigScale(params.local, 'ramp_A') : null;
+  }
   function rampFieldWhich(id) { return { ramp_f_freq: 'freq', ramp_f_amp: 'amp', ramp_f_off: 'off' }[id]; }
 
   function rampTabSet(name, no_save) {
@@ -3836,10 +4055,10 @@
               ', set&nbsp;' + rampFmtSI(ramp_f_nominal, 'Hz', 4) : '');
     if(isNaN(parseRampFreq($('#ramp_f_freq').val()))) t += bad;
     $('#ramp_f_freq_text').html(t + '</small>');
-    t = '<small><b>' + rampMv(ao.amp) + 'pp</b> (low&nbsp;' + rampMv(low) + ', high&nbsp;' + rampMv(hig) + ')';
+    t = '<small><b>' + rampSfx(rampMv(ao.amp, 0, true), 'pp') + '</b> (low&nbsp;' + rampMv(low) + ', high&nbsp;' + rampMv(hig) + ')';
     if(isNaN(parseRampCounts($('#ramp_f_amp').val()))) t += bad;
     $('#ramp_f_amp_text').html(t + '</small>');
-    t = '<small><b>' + rampMv((low + hig) / 2, 1) + 'dc</b>';
+    t = '<small><b>' + rampSfx(rampMv((low + hig) / 2, 1), 'dc') + '</b>';
     if(isNaN(parseRampCounts($('#ramp_f_off').val()))) t += bad;
     $('#ramp_f_off_text').html(t + '</small>');
   }
@@ -3853,7 +4072,7 @@
     var txt = $('#' + id).val();
     if(txt === ramp_f_shown[id]) { rampFreqShow(true); return; }
     var p = params.local, cur = rampAmpOffOf(p.lock_ramp_low_lim, p.lock_ramp_hig_lim), saw = Number(p.lock_ramp_sawtooth) ? 1 : 0;
-    var val = (which === 'freq' ? parseRampFreq(txt) : parseRampCounts(txt));
+    var val = (which === 'freq' ? parseRampFreq(txt) : parseRampCounts(txt, rampCalib(), which === 'amp'));
     if(isNaN(val)) { rampFreqShow(true); return; }
     var f = (which === 'freq' ? val : rampKeepFreq(p, ramp_f_nominal));
     var r = rampFreqTabSet(f, (which === 'amp' ? val : cur.amp), (which === 'off' ? val : cur.off), saw, (which === 'off' ? 'off' : 'amp'));
@@ -3900,7 +4119,7 @@
       return;
     } else {
       var ao = rampAmpOffOf(p.lock_ramp_low_lim, p.lock_ramp_hig_lim);
-      var v = parseRampCounts($(that).val());
+      var v = parseRampCounts($(that).val(), rampCalib(), which === 'amp');
       if(isNaN(v)) v = (which === 'amp' ? ao.amp : ao.off);
       $(that).val(String(v + (up ? mult : -mult)));
     }
@@ -4471,7 +4690,8 @@
     var tu = (plot_time_units !== null ? plot_time_units : params.local.time_units);
     var x_floor = lockCaptureClickX(pos.x, tu);
     var time_val  = (x_floor === null ? null : clickToTrigTime(x_floor, tu, rampPeriodCycles(params.local)));
-    var level_val = clickToTrigLevel(pos.y, params.local.lock_osc_raw_mode);
+    var level_val = clickToTrigLevel(pos.y, params.local.lock_osc_raw_mode,
+                                     (typeof lockTrigScale === 'function') ? lockTrigScale() : null);   // v2.0.12
     if(tg.time && time_val === null && !tg.level) return false;   // nothing to set: keep waiting (see the message)
 
     user_editing = false;
@@ -5505,10 +5725,21 @@
 
   // keep_unsent: true for server responses (POST/GET), keeps the unsent user changes in params.local and in
   // the controls (params.original keeps the server values, so the next sendParams() sends them)
+  // v2.0.12: warning when the controller does not use the user calibration of the EEPROM (src/calib.c: format not
+  // recognised or values out of range -> factory zone or nominal values; the line "Calibration: ..." of the log says why)
+  function calibWarn(status) {
+    var s = Number(status), t = '';
+    if(s === 2) t = 'Calibration not recognised: using nominal values (1 V / 20 V)';
+    else if(s === 1) t = 'User calibration not valid: using the factory calibration';
+    $('#calib_warn').text(t).attr('title', t ? 'See the line "Calibration: ..." of the log of the App '+
+                                         '(/var/log/redpitaya_nginx/debug.log)' : '').toggle(t !== '');
+  }
+
   function loadParams(orig_params, keep_unsent) {
     if(! $.isPlainObject(orig_params)) {
       return;
     }
+    if(orig_params.calib_status !== undefined) calibWarn(orig_params.calib_status);
 
     // Keys missing in orig_params (a config of another App or of an older version, e.g. without lock_lpf_*):
     // keep the current values, so their controls and params.local do not change. .val(undefined) used to leave
@@ -5800,6 +6031,12 @@
 
     //$('#lock_stream_ip'          ).val( Int32toIP(params.original.lock_stream_ip)         );
 
+    // v2.0.12: Raw Mode, calibration, routing or ranges changed: the labels of the PIDs and of the level
+    // trigger are written again (their update functions return early when their fields did not change)
+    if(typeof calibDisplayKey === 'function') {
+      var cdk = calibDisplayKey(params.local);
+      if(cdk !== calib_display_key) { calib_display_key = cdk; pidA_sp = NaN; pidB_sp = NaN; trig_val = NaN; }
+    }
     lock_ramp_step_update();
     if(typeof rampFreqShow === 'function') {   // v2.0.10 (plus 2.2.0) (the node sims take loadParams() alone)
       rampFreqShow(false);       // frequency tab of the Ramp Controller
@@ -6729,7 +6966,9 @@
 
     if(y === undefined) {
       if(update_input !== false) {
-        $('#trig_level').not(':focus').val(floatToLocalString(trigRaw(params.local) ? Math.round(tlev) : tlev));
+        // v2.0.12: volts rounded as trigLevelText() (it showed 0,249999689324); display only
+        $('#trig_level').not(':focus').val(floatToLocalString(trigRaw(params.local) ? Math.round(tlev) :
+                                                              Number(tlev.toFixed(trigLevelDecimals(params.local)))));
       }
       y = plot.getAxes().yaxis.p2c(tlev);
     }
@@ -6770,6 +7009,9 @@
     var yrange = axes.yaxis.max - axes.yaxis.min;
     var yminrange = 5e-3;  // Volts
     var ymaxrange = params.original.gui_reset_y_range;
+    // v2.0.12: Raw Mode: Y in counts (it showed "16384 V" and Y+ was always off: limit of 2 V)
+    var yraw = !!(params.local && Number(params.local.lock_osc_raw_mode));
+    if(yraw) { yunit = 'counts'; yminrange = 5; ymaxrange = 2 * 8192 * 1.2; }
     // v2.3.18: longest window of the scope, 16384 samples at the largest decimation (524288, range 6): 68.72 s.
     // It was 10 s, so X+ stopped at 10 s although the 20 s and 50 s windows exist.
     var xmaxrange = 16384 * 524288 * 8e-9;  // seconds
@@ -6785,7 +7027,7 @@
     }
     var seconds = (xunit == 'ns' ? 1e-9 : ( xunit == 'μs' ? 1e-6 : (xunit == 'ms' ? 1e-3 : 1)));
 
-    if(yrange < 1) {
+    if(yrange < 1 && !yraw) {
       yunit = 'mV';
       yrange *= 1000;
       ymaxrange *= 1000;
@@ -7419,7 +7661,8 @@
     <div class="container">
       <a id="btn_exit" class="pull-left" href="/index.html"><span class="glyphicon glyphicon-chevron-left" title="Exit" alt="Exit"></span></a>
       <img class="logo pull-left" src="../assets/images/logo_white.png">
-      <h2 class="page-title">Square lock-in+PID (v2.0.10)</h2>
+      <!-- v2.0.12: #calib_warn: calibration of the board not recognised (src/calib.c, read-only param calib_status), see calibWarn() -->
+      <h2 class="page-title">Square lock-in+PID (v2.0.12) <small id="calib_warn" style="display:none; color:#ffcc66;"></small></h2>
     </div>
   </div>
   <div class="container">
@@ -8232,7 +8475,7 @@
                         <div class="form-group">
                           <label for="lock_lock_trig_val" class="col-xs-4 control-label">Level trigger:</label>
                           <div class="col-xs-4 col-sm-8">
-                            <input type="text" autocomplete="off" spellcheck="false" class="form-control" value="0" id="lock_lock_trig_val" step="1" min="-8192" max="8191" title="Level: counts (-8192..8191, 1 V = 8192) or a voltage with units: V, mV (e.g. 0.1 V)">
+                            <input type="text" autocomplete="off" spellcheck="false" class="form-control" value="0" id="lock_lock_trig_val" step="1" min="-8192" max="8191" title="Level: counts (-8192..8191) or a voltage with units: V, mV (calibration of the trigger signal, about 1 V = 8192) (e.g. 0.1 V)">
                             <span style="display: none;" class="input-group-btn" id="lock_lock_trig_val_apply">
                               <button type="button" class="btn btn-primary btn-lg"><span class="glyphicon glyphicon-ok-circle"></span></button>
                             </span>
@@ -8709,9 +8952,9 @@
                     <div class="panel-group col-xs-12 col-sm-12 col-md-12">
                       <form class="form-horizontal" role="form" onsubmit="return false;" novalidate>
                         <div class="form-group">
-                          <label for="ramp_f_amp" class="col-xs-4 control-label" title="Peak-to-peak amplitude of the ramp, in machine units (counts: 8192 = 1 V): Ramp hig lim - Ramp low lim. Also 500 mV or 0.5 V. Changing it keeps the frequency set above (Ramp period recomputed). Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">Amp.&nbsp;p-p:</label>
+                          <label for="ramp_f_amp" class="col-xs-4 control-label" title="Peak-to-peak amplitude of the ramp, in machine units (counts; mV / V with the nominal 8192 counts = 1 V): Ramp hig lim - Ramp low lim. Also 500 mV or 0.5 V. Changing it keeps the frequency set above (Ramp period recomputed). Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">Amp.&nbsp;p-p:</label>
                           <div class="col-xs-8">
-                            <input type="text" autocomplete="off" class="form-control" value="" id="ramp_f_amp" title="Peak-to-peak amplitude of the ramp, in machine units (counts: 8192 = 1 V): Ramp hig lim - Ramp low lim. Also 500 mV or 0.5 V. Changing it keeps the frequency set above (Ramp period recomputed). Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">
+                            <input type="text" autocomplete="off" class="form-control" value="" id="ramp_f_amp" title="Peak-to-peak amplitude of the ramp, in machine units (counts; mV / V with the nominal 8192 counts = 1 V): Ramp hig lim - Ramp low lim. Also 500 mV or 0.5 V. Changing it keeps the frequency set above (Ramp period recomputed). Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">
                           </div>
                           <div class="col-xs-12 col-sm-12 text-center" style="clear: both;">
                             <div style="padding: 7px 0 0;" class="col-xs-12" id="ramp_f_amp_text"></div>
@@ -8723,9 +8966,9 @@
                     <div class="panel-group col-xs-12 col-sm-12 col-md-12">
                       <form class="form-horizontal" role="form" onsubmit="return false;" novalidate>
                         <div class="form-group">
-                          <label for="ramp_f_off" class="col-xs-4 control-label" title="Center of the ramp, in machine units (counts: 8192 = 1 V): floor((hig + low)/2). Also -200 mV or 0.1 V. The frequency does not change. Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">Offset:</label>
+                          <label for="ramp_f_off" class="col-xs-4 control-label" title="Center of the ramp, in machine units (counts; mV / V with the nominal 8192 counts = 1 V): floor((hig + low)/2). Also -200 mV or 0.1 V. The frequency does not change. Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">Offset:</label>
                           <div class="col-xs-8">
-                            <input type="text" autocomplete="off" class="form-control" value="" id="ramp_f_off" title="Center of the ramp, in machine units (counts: 8192 = 1 V): floor((hig + low)/2). Also -200 mV or 0.1 V. The frequency does not change. Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">
+                            <input type="text" autocomplete="off" class="form-control" value="" id="ramp_f_off" title="Center of the ramp, in machine units (counts; mV / V with the nominal 8192 counts = 1 V): floor((hig + low)/2). Also -200 mV or 0.1 V. The frequency does not change. Wheel: +/- 1, SHIFT x10, CTRL x100, both x1000.">
                           </div>
                           <div class="col-xs-12 col-sm-12 text-center" style="clear: both;">
                             <div style="padding: 7px 0 0;" class="col-xs-12" id="ramp_f_off_text"></div>

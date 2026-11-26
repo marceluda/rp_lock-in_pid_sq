@@ -26,6 +26,7 @@
 #include "fpga.h"
 #include "fpga_lock.h"
 #include "lock.h"
+#include "sig_scale.h"    /* v2.0.12: display scale of the signal of each scope channel */
 
 pthread_t *rp_osc_thread_handler = NULL;
 void *rp_osc_worker_thread(void *args);
@@ -62,6 +63,17 @@ int                  *rp_fpga_cha_signal, *rp_fpga_chb_signal;
 
 /* Calibration parameters read from EEPROM */
 rp_calib_params_t *rp_calib_params = NULL;
+
+/* v2.0.12 (lock_in+pid 2.2.17): correction (counts added to the raw samples) of scope channels A and B: the one of the
+ * signal shown (sig_scale.h): ADC offset of in1 / in2 in the range of that input (gain_ch1 for in1, gain_ch2 for in2,
+ * whatever the scope channel; before, the HV offset of the EEPROM was used in both ranges and added with the wrong
+ * sign, see calib.h), the DAC offset of ctrl_A / ctrl_B routed to an output and of out1 / out2, 0 otherwise. Never
+ * used in Raw Mode (raw integers). */
+static void rp_osc_calib_dc_offs(int32_t *cha_offs, int32_t *chb_offs)
+{
+    rp_sig_osc_scale(rp_calib_params, rp_osc_params, 0, NULL, cha_offs);
+    rp_sig_osc_scale(rp_calib_params, rp_osc_params, 1, NULL, chb_offs);
+}
 
 /* v2.3.23: reader of a long acquisition (rp_osc_long_rd_*(), see there) */
 typedef struct rp_osc_long_rd_s {
@@ -432,6 +444,7 @@ static const int rp_osc_acq_keys[] = {
     MIN_GUI_PARAM, MAX_GUI_PARAM, TRIG_MODE_PARAM, TRIG_SRC_PARAM, TRIG_EDGE_PARAM, TRIG_DLY_PARAM,
     TRIG_LEVEL_PARAM, TIME_RANGE_PARAM, TIME_UNIT_PARAM, EN_AVG_AT_DEC, PRB_ATT_CH1, GAIN_CH1, PRB_ATT_CH2,
     GAIN_CH2, GEN_DC_OFFS_1, GEN_DC_OFFS_2, LOCK_OSCA_SW, LOCK_OSCB_SW, LOCK_OSC_RAW_MODE, LOCK_OSC_LOCKIN_MODE,
+    LOCK_OUT1_SW, LOCK_OUT2_SW, LOCK_PIDA_SW, LOCK_PIDB_SW,   /* v2.0.12: they choose the scale (sig_scale.h) */
     -1 };
 
 static int rp_osc_acq_params_same(const rp_app_params_t *a, const rp_app_params_t *b)
@@ -578,17 +591,11 @@ void *rp_osc_worker_thread(void *args)
             dec_factor =
                 osc_fpga_cnv_time_range_to_dec(curr_params[TIME_RANGE_PARAM].value);
 
-            uint32_t fe_fsg1 = (curr_params[GAIN_CH1].value == 0) ?
-                    rp_calib_params->fe_ch1_fs_g_hi :
-                    rp_calib_params->fe_ch1_fs_g_lo;
-            ch1_max_adc_v =
-                    osc_fpga_calc_adc_max_v(fe_fsg1, (int)curr_params[PRB_ATT_CH1].value);
-
-            uint32_t fe_fsg2 = (curr_params[GAIN_CH2].value == 0) ?
-                    rp_calib_params->fe_ch2_fs_g_hi :
-                    rp_calib_params->fe_ch2_fs_g_lo;
-            ch2_max_adc_v =
-                    osc_fpga_calc_adc_max_v(fe_fsg2, (int)curr_params[PRB_ATT_CH2].value);
+            /* v2.0.12: full scale of the signal shown on each channel (sig_scale.h: in1 / in2 with their own
+             * range and probe, ctrl_A / ctrl_B and out1 / out2 the DAC, the rest nominal 1 V); it was the IN1 / IN2
+             * full scale of channel A / B for any signal */
+            rp_sig_osc_scale(rp_calib_params, curr_params, 0, &ch1_max_adc_v, NULL);
+            rp_sig_osc_scale(rp_calib_params, curr_params, 1, &ch2_max_adc_v, NULL);
         }
 
         pthread_mutex_unlock(&rp_osc_ctrl_mutex);
@@ -663,19 +670,7 @@ void *rp_osc_worker_thread(void *args)
             continue;
         }
 
-        if( rp_osc_params[LOCK_OSCA_SW].value==1 )
-            fe_ch1_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-        else if( rp_osc_params[LOCK_OSCA_SW].value==2 )
-            fe_ch1_dc_offs=rp_calib_params->fe_ch2_dc_offs;
-        else
-            fe_ch1_dc_offs=0;
-
-        if( rp_osc_params[LOCK_OSCB_SW].value==1 )
-            fe_ch2_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-        else if( rp_osc_params[LOCK_OSCB_SW].value==2 )
-            fe_ch2_dc_offs=rp_calib_params->fe_ch2_dc_offs;
-        else
-            fe_ch2_dc_offs=0;
+        rp_osc_calib_dc_offs(&fe_ch1_dc_offs, &fe_ch2_dc_offs);
 
         /* v2.3.23: new parameters that do not change the acquisition in progress (same state): resume it */
         if(new_params) {
@@ -1004,14 +999,7 @@ int rp_osc_decimate(float **cha_signal, int *in_cha_signal,
     int32_t  fe_ch2_dc_offs=0;
 
     // if oscilloscope channels are in in1 or in2, make offset correction
-    if( rp_osc_params[LOCK_OSCA_SW].value==1 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCA_SW].value==2 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch2_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==1 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==2 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch2_dc_offs;
+    rp_osc_calib_dc_offs(&fe_ch1_dc_offs, &fe_ch2_dc_offs);
 
     /* If illegal take whole frame */
     if(t_stop <= t_start) {
@@ -1204,14 +1192,7 @@ static int rp_osc_long_rd_read(rp_osc_long_rd_t *rd, int done,
     int32_t fe_ch1_dc_offs = 0, fe_ch2_dc_offs = 0;
 
     // if oscilloscope channels are in in1 or in2, make offset correction
-    if( rp_osc_params[LOCK_OSCA_SW].value==1 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCA_SW].value==2 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch2_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==1 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==2 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch2_dc_offs;
+    rp_osc_calib_dc_offs(&fe_ch1_dc_offs, &fe_ch2_dc_offs);
 
     hi = rd->written - 1;
     lo = rd->written - OSC_FPGA_SIG_LEN + RP_OSC_RD_MARGIN;
@@ -1369,14 +1350,7 @@ int rp_osc_auto_set(rp_app_params_t *orig_params,
     float max_adc_norm = osc_fpga_calc_adc_max_v(rp_calib_params->fe_ch1_fs_g_hi, 0);
 
     // if oscilloscope channels are in in1 or in2, make offset correction
-    if( rp_osc_params[LOCK_OSCA_SW].value==1 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCA_SW].value==2 )
-        fe_ch1_dc_offs=rp_calib_params->fe_ch2_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==1 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch1_dc_offs;
-    if( rp_osc_params[LOCK_OSCB_SW].value==2 )
-        fe_ch2_dc_offs=rp_calib_params->fe_ch2_dc_offs;
+    rp_osc_calib_dc_offs(&fe_ch1_dc_offs, &fe_ch2_dc_offs);
 
 
     /* Channel to be used for auto-algorithm:
@@ -1904,6 +1878,10 @@ inline float rp_osc_meas_cnv_cnt(float data, float adc_max_v)
 /*----------------------------------------------------------------------------------*/
 int rp_osc_meas_convert(rp_osc_meas_res_t *ch_meas, float adc_max_v, int32_t cal_dc_offs)
 {
+    /* v2.0.12 (lock_in+pid 2.2.17): Raw Mode shows the integers of the FPGA as they are (the traces had no offset, the
+     * Measure table added the calibration correction: Avg +146 with the trace at -63, testAgent RP2 2026-11-26) */
+    if(rp_osc_params[LOCK_OSC_RAW_MODE].value > 0)
+        cal_dc_offs = 0;
     ch_meas->min = rp_osc_meas_cnv_cnt(ch_meas->min+cal_dc_offs, adc_max_v);
     ch_meas->max = rp_osc_meas_cnv_cnt(ch_meas->max+cal_dc_offs, adc_max_v);
     ch_meas->amp = rp_osc_meas_cnv_cnt(ch_meas->amp, adc_max_v);

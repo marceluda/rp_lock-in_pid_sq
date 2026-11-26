@@ -78,7 +78,7 @@ the last value comes back.
 | Stop | Stops the acquisition. |
 | Save Data | Plot data as Python/Numpy, Matlab/Octave or CSV ([Saving data](#saving-data)). |
 | Config | Save / load configurations ([below](#saving-and-loading-configurations)). |
-| Raw Mode | Values in counts (`int`) instead of volts (also in the Square Lock-in display). Also the *Level* of the scope trigger (field, slider and line; −8192 … 8191, unit `counts`): switching Raw Mode converts it (counts = V × 8192 / full scale) and sets Y to −8192 … 8192 / −1 … 1 V. Before v2.0.8 the level in Raw Mode was taken as volts by the controller (Normal / Single did not trigger). |
+| Raw Mode | Values in counts (`int`) instead of volts (also in the Square Lock-in display). Also the *Level* of the scope trigger (field, slider and line; −8192 … 8191, unit `counts`): switching Raw Mode converts it (counts = V × 8192 / full scale) and sets Y to −8192 … 8192 / −1 … 1 V. Before v2.0.8 the level in Raw Mode was taken as volts by the controller (Normal / Single did not trigger). **Since v2.0.12 Raw Mode shows the plain integers of the FPGA everywhere, without calibration offset or scale**: traces, the Measure table (Min / Max / Avg added the calibration offset of the input up to v2.0.11), the mV labels of the ramp, set points and level trigger (they show `counts`; `3124 counts pp`, `0 counts dc`), the lock-in displays (sqX, sqY, R, sqF are the 28-bit registers; they were divided by 8192) and the Y range of the plot (`counts`). The titles of the lock-in displays (`sqX [int]`, `ϕ [deg]` …) go back to `sqX`, `ϕ` … with Raw Mode off (they stayed `[int]` up to v2.0.11). See [Volts in the display: calibration](#volts-in-the-display-calibration-v2012). |
 | Averaging | Average inside the decimation. |
 | **AUTO** | Auto-set of the scope in the controller (time range, trigger, Y range). Ends a lock capture. Not the same as *Autoscale*. The minimum window it chooses is 1 µs. The trigger level is set to the middle of the signal (since v2.0.9 also with a calibration offset of the input; whole counts in Raw Mode). |
 
@@ -560,6 +560,66 @@ Since v2.0.3 (port of `lock_in+pid_harmonic` v2.3.23, see the CHANGELOG):
 screenshots of `lock_in+pid_harmonic`, whose scope is the same:
 [its Usage.md](https://github.com/marceluda/rp_lock-in_pid_h/blob/master/doc/Usage.md#slow-scans).)
 
+## Volts in the display: calibration (v2.0.12)
+
+Port of lock_in+pid_harmonic 2.3.33 (= lock_in+pid 2.2.17); adapted to the square lock-in of this App. The FPGA works with integers (14-bit counts,
+$-8192 \ldots 8191$). What one count is in volts depends on the board: the gain of each input (LV / HV jumpers), its
+offset and the full scale of each DAC are stored in the EEPROM. Since v2.0.12 the controller reads every format of the
+EEPROM (1, and the universal 5 / 6 of the Gen2 boards; user zone, else factory zone, else nominal values 1 V / 20 V with
+a warning next to the title of the page) and the page and the scope use that calibration **only for what they show**
+(and for the integer that a voltage typed with units gives): the FPGA gets exactly the same integers as before for the
+same settings.
+
+A value $n$ of a signal is shown as
+
+$$
+V = (n + c)\,\frac{k}{8192}
+$$
+
+with $k$ the voltage of 8192 counts and $c$ a correction in counts, chosen by the kind of signal (same rules in the
+controller, `src/sig_scale.h`, for the traces, the Measure table and the scope trigger, and in the page, block
+`[CALIB DISPLAY]` of `index.html`, for the labels). Rule of the user (lock_in+pid 2.2.17-35), Raw Mode off:
+
+| Signal | $k$ | $c$ |
+|---|---|---|
+| in1, in2 (scope traces, Measure, trigger, labels) | full scale of that input in its range (*Gain settings*: Channel 1 = IN1, Channel 2 = IN2) × probe attenuation | ADC offset of that input and range |
+| in1-in2 (*Signal for trigger* 9) | mean of the IN1 and IN2 full scales of the range in use (× probe). IN1 and IN2 with different range or probe: mean of the LV full scales (approximate) | 0 |
+| Lock-in displays under the scope (sqX, sqY, R, sqF; labels only) | input calibration of the *Lock-in input*: in1 → IN1 full scale (range × probe), in2 → IN2, in1-in2 → the mean above; other inputs (sq_ref, sq_quad, sq_phas, aux_A, Ramp A): nominal 1 V | 0 (demodulated values) |
+| ctrl_A, ctrl_B (also as *Signal for trigger* 12 / 13) | full scale of the DAC of the output they go to (*Out1* / *Out2*); not routed: the DAC where another signal of its chain (Ramp, PID out, aux of the same letter) is routed, else OUT1 for ctrl_A and OUT2 for ctrl_B | −DAC offset when routed directly to that output (volts at the connector), else 0 |
+| out1, out2 (scope selector, the integer of each DAC, whatever is routed there) | full scale of that DAC | −its DAC offset (volts at the connector) |
+| Everything else: error, sqXo, sqYo, sqFo and signal_i traces, PID inputs (also when the PID input is in1, in2 or in1-in2) and set points, Ramp A / B, PID A / B out, aux_A / aux_B, square references sq_ref, sq_quad, sq_phas (routed to an output or not) | **nominal** 1 V (8192 counts = 1 V, the factory conversion, the same on every board) | 0 |
+
+- **ctrl = ramp + PID out** holds in counts, not exactly in volts: ctrl_A / ctrl_B (and out1 / out2) are shown with
+  the DAC full scale and offset, the ramp and the PID output with 8192 counts = 1 V. E.g. Gen2 with ctrl_A on Out1,
+  ramp 5000 counts and PID out 0: Ramp A reads 610 mV and ctrl_A $(5000 - 290)\cdot 2.321/8192$ = 1334 mV; RP2 (Gen1,
+  DAC 1.0489 V): 610 mV and 640 mV.
+- **PID inputs in1 / in2 / in1-in2:** nominal, as lock_in+pid and lock_in+pid_harmonic (lock_in+pid_plus uses the input
+  calibration there). This is a pending decision of the user, kept as a one-line switch (`RP_SIG_PID_IN_CALIB` in
+  `src/sig_scale.h` and `calib_pid_in_calib` in `[CALIB DISPLAY]`, changed together).
+- **Labels of the page:** Ramp hig / low lim, mVpp and mVdc, the *freq* tab (Amp. p-p, Offset, low, high), PID A / B set
+  point: nominal; $V_\mathrm{trg}$ of the level trigger: scale of its *Signal for trigger* (in1 / in2 / in1-in2
+  calibrated, ctrl_A / ctrl_B with the DAC, the others nominal); the lock-in displays: scale of the *Lock-in input*. They are written again
+  when Raw Mode, the calibration, a range, a probe, an output / PID input switch or the *Lock-in input* change.
+- **Typed voltages** (*Level trigger*, *Amp. p-p*, *Offset*, click on the plot for the level trigger) are converted with
+  the same scale: $n = \mathrm{round}(V \cdot 8192 / k - c)$, so the integer that the FPGA gets is the one that gives
+  the voltage typed (within half a count). Plain numbers are counts as always. Also in Raw Mode
+  ([rule below](#typing-values-with-units)).
+- **Raw Mode:** no scale and no offset anywhere (see *Raw Mode* in the toolbar).
+- **Gen1 boards (format 1, e.g. RP2):** inputs 1.0000 V / 20 V as before, LV offsets of the EEPROM now used (RP2: IN1
+  +210 counts = +25.6 mV, IN2 −20 counts = −2.4 mV); ctrl_A / ctrl_B and out1 / out2: the DAC full scale of the EEPROM,
+  1.0489 V on RP2, so their traces show 4.9 % more than up to v2.0.11. Ramp, PID out, aux and references: 8192 counts =
+  1 V as before. Without calibration: nominal values, the same labels as before.
+- **Gen2 (STEMlab 125-14 v2.0, format 5 / 6):** LV ≈ 1.15 V, HV ≈ 28.9 V and DAC ≈ 2.32 V (Hi-Z) per 8192 counts, DAC
+  offsets of ≈ 300 counts (≈ 82 mV).
+- **Configs and Python:** the parameters of the lock-in, ramp, PIDs and level trigger are integers in the configs and in
+  the registers, so a config saved on one board loads the same integers on another (the volts shown differ by the
+  calibration of each board). The scope *Level* (volts mode) and the Y zoom are saved in volts. The 13 read-only
+  `calib_*` parameters are not saved. The Python scripts of `py/` still use 8192 counts = 1 V.
+- The scope channel that shows in2 uses the range of IN2 (*Channel 2*) since v2.0.12; it used the settings of its own
+  channel (*Channel 1* for OscA). The scale of a scope channel follows Out1 / Out2 and the PID input switches too.
+- The scope trigger *Level* field shows the volts rounded to one decimal more than one ADC count needs (5 decimals at
+  $\pm 1.08$ V, 4 with a probe ×10 or HV; it showed `0,249999689324`); the level itself is not rounded.
+
 ## Typing values with units
 
 Five fields are text fields that accept a number with a unit (decimal point or comma, optional space, units not
@@ -571,10 +631,18 @@ by one tick / count.
 | Field | Without unit | Units | Examples (checked on the board, 2.0.0-5) |
 |---|---|---|---|
 | Lock Control → Time trigger | ticks of 8 ns | `s` (`seg`), `ms`, `us` (`µs`), `ns`, `tick(s)`; 0 .. 4294967295 (34.36 s), clamped | `16.58 ms` → 2072500, `40 s` → 4294967295 |
-| Lock Control → Level trigger | counts | `V`, `mV`, `count(s)`; −8192 .. 8191, clamped | `120 mV` → 983, `abc` → not sent |
+| Lock Control → Level trigger | counts | `V`, `mV`, `count(s)`; −8192 .. 8191, clamped | `120 mV` → 983, `abc` → not sent (v2.0.12: volts with the calibration of the trigger signal, see [above](#volts-in-the-display-calibration-v2012); the examples are for 1 V / 8192 counts) |
 | Square oscillator → Half period | `gen_mod_sqp` | a frequency `Hz`, `kHz`, `MHz` (nearest possible value) or a period `s`, `ms`, `us`, `ns` | `31.25 MHz` → 1, `50 kHz` → 1249, `20 us` → 1249 |
 | Square oscillator → Phase | ticks | `deg` (`°`), `rad`, `pi` (`π`): fraction of the current period; or a delay `s`, `ms`, `us`, `ns` | `90 deg` → 625 at 50 kHz, `0.5 pi` → 625 |
 | Ramp Controller → Ramp period (tab *period*, since v2.0.10) | `ramp_step` | the whole period of the ramp: `s` (`seg`), `ms`, `us`; 0 .. 2147483520, nearest step | `10 ms` → 77 (triangle ±4000), 155 (sawtooth), `4294967295` → 2147483520 (board, 2.0.10-20) |
+
+**Rule of the lock-in fields (v2.0.12, as lock_in+pid 2.2.17):** a value **with units** (`V`, `mV`) is converted with
+the scale of its signal ([above](#volts-in-the-display-calibration-v2012): calibrated for in1 / in2, in1-in2 and ctrl_A
+/ B; nominal 8192 counts = 1 V for the rest); a value **without units** is the integer of the FPGA, unchanged. The same
+with Raw Mode on and off. Fields with units: *Level trigger*, *Amp. p-p*, *Offset* of the *freq* tab (Ramp lim and PID
+set points have the same code but are number fields: only plain integers can be typed). The scope *Level* (*Trigger*
+menu) does not follow this rule: it takes a plain number, in V of the trigger channel with Raw Mode off and in counts
+with Raw Mode on.
 
 Sources: `index.html` `parseTrigTime()`, `parseTrigLevel()` (l. 2486-2497), `input_unit_parsers` (l. 2500-2503,
 with `rampStepParseField()` of the Ramp period), `parseSqPeriod()`, `parseSqPhase()` (l. 2529-2574),

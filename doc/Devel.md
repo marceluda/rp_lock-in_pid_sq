@@ -1,6 +1,6 @@
 # Development: building and modifying the App
 
-How to build, modify, test and install `lock_in+pid_square` v2.0.11 (branch `master`). The internal
+How to build, modify, test and install `lock_in+pid_square` v2.0.12 (branch `master`). The internal
 structure is explained in [Structure.md](Structure.md) and the registers in [FPGA.md](FPGA.md).
 
 The build system, tools and tests are the ones of `lock_in+pid_harmonic` v2.3.18 (this repository was created as a
@@ -294,6 +294,12 @@ multicycle constraint is no longer valid ([FPGA.md](FPGA.md#lock-module-0x406000
   What is own of this App was kept: the Ext Trig *Square mod.* of Reset zoom (`sqPeriodCycles()`), its title, and the
   parsers of the square oscillator in `input_unit_parsers`. The localStorage key of the tab is
   `'lockin_ramp_tab_' + app_id`, so the same code serves every App.
+- v2.0.12 (port of `lock_in+pid_harmonic` 2.3.33 = `lock_in+pid` 2.2.17): `src/calib.c` / `src/calib.h` are the same
+  files as in `lock_in+pid` (md5 `797d4a32…` / `045a9bde…`; keep them identical); `src/sig_scale.h` (display scale of
+  the signals, header only) and the `[CALIB DISPLAY]` block of `index.html` hold the same rules and must change together
+  (checked by `calib_display_sim.js`, 800 cases); their selector tables are those of this App (lock.v: scope 0 … 31 with sq_ref, sq_quad, sq_phas at 12 … 14 and out1 / out2 at 19 / 20, PID inputs 0 … 15 with in1-in2 / in1 / in2 at 6 / 7 / 8, outputs 0 … 15, level trigger 0 … 15 with ctrl_A / ctrl_B, lock-in input 0 … 7; displays sqX, sqY, R, sqF by `lock_signal_sw`). The classification of the PID inputs
+  in1 / in2 / in1-in2 is a one-line switch, `RP_SIG_PID_IN_CALIB` (C) and `calib_pid_in_calib` (page), pending a
+  decision of the user. Comments marked `v2.0.12`; some keep `v2.2.17` / `build 35` / `build 36` of lock_in+pid.
 
 ## Registers and `config_tool.py`
 
@@ -339,16 +345,19 @@ After adding or changing a register: run the tool, rebuild FPGA + controller + t
 | `config_load_window_sim.js` | `node test/config_load_window_sim.js [--old]` | Config → load of the time window: conversion, and the real chunked send of `index.html` against a model of `rp_set_params()` (forceX handshake) plus a GET poll (v2.3.17) |
 | `last_config_sim.js` | `node test/last_config_sim.js [index.html]` | "Load last config on init" (default checked, localStorage), restore of the last config / defaults on init, hold of the last config, Load last config / Reset to defaults, Restart and recoveries restore the tab state, Lock Control below Outputs (v2.0.6, 35 checks) |
 | `config_load_block_sim.js` | `node test/config_load_block_sim.js [index.html]` | the option "Don't turn on PIDs and Ramp on config loading": unchecked by default, Config → load and Restart restore ramp / Scan enable / PIDs as saved, checked keeps them off, lock requests always 0 (v2.0.5, 10 checks) |
-| `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX; since v2.0.3 also a model of the circular scope buffer and of the lock pulse (slow windows, Capture Lock with history, time trigger after a stopped ramp); since v2.0.5 section 11: Auto waits for the trigger, forced after its time limit (`SIM_AUTO=1` runs only it); since v2.0.8 section 12: Raw Mode trigger level (threshold registers, AUTO in Raw Mode; since v2.0.9 also the AUTO level at the middle with a calibration offset and a normalized full scale other than 1 V, volts and Raw, and half counts) |
+| `auto_set_c_sim/` | `test/auto_set_c_sim/run.sh [src dir]` | the real C controller compiled for the PC with fake `/dev/mem` (`fake_hw.h`, `harness.c`): AUTO after a capture, forceX; since v2.0.3 also a model of the circular scope buffer and of the lock pulse (slow windows, Capture Lock with history, time trigger after a stopped ramp); since v2.0.5 section 11: Auto waits for the trigger, forced after its time limit (`SIM_AUTO=1` runs only it); since v2.0.8 section 12: Raw Mode trigger level (threshold registers, AUTO in Raw Mode; since v2.0.9 also the AUTO level at the middle with a calibration offset and a normalized full scale other than 1 V, volts and Raw, and half counts; since v2.0.12 `calib.c` reads an EEPROM image with the old defaults, 0.6543 V and correction +585, written by `sim_eeprom_make()` through `fake_fopen()`, and 11.17-11.22: Measure in Raw Mode without the calibration offset, scale of the signal of each scope channel (`src/sig_scale.h`), the `calib_*` params) |
 | `lock_latency_tb.sv` | `test/lock_latency_sim.sh [work_dir [old_ref]]` (Vivado 2020.1 xsim) | `lock.v` of the working tree side by side with the one of v2.0.0: every signal is the old one delayed by the latency of [`lock_latency.md`](../lock_in+pid_square/doc/lock_latency.md) (v2.0.1); prints `TB RESULT: PASS` |
 | `ramp_mod_period_tb.v` | `test/ramp_mod_period_sim.sh [work_dir]` (Vivado 2020.1 xsim) | periods of the ramp floor/ceil triggers and of the square modulation trigger (`gen_mod_sq`) on the RTL, the formulas used by Reset zoom (v2.0.3); prints `TB RESULT: PASS` |
 | `reset_zoom_sim.js` | `node test/reset_zoom_sim.js [index.html] [--old]` | the real `resetZoom()` against a model of the time range code of `src/main.c`, with square periods (v2.0.3); since v2.0.10 cases C1-C15: whole period / rising half alternation with Scan floor and a triangle, Dec, break of the cycle by hand / window / ramp / trigger, sawtooth, Scan ceil, Source, slow scan, Lock osc. screen, handlers that call the break (57 checks) |
 | `plot_wheel_sim.js` | `node test/plot_wheel_sim.js [index.html]` | mouse wheel on the plot: no key / SHIFT / ALT, limits, debounce, Capture Lock (v2.0.3) |
 | `osc_presets_sim.js` | `node test/osc_presets_sim.js [index.html]` | the OscA\|OscB presets (with `sqX\|sqY`), the `usr` dialog and the Ext Trig → Trigger panel rule (v2.0.4) |
 | `lock_quick_trig_sim.js` | `node test/lock_quick_trig_sim.js [index.html]` | the quick trigger buttons time / level / time+level of Lock Control: type set, pending click without POST, one click on the graph → values + one Trigger Lock (Capture Lock), cancel, ARMED / LOCKED, POST in flight (also LOCKED + POST in flight: release then request), message without layout shift, buttons in one centered flex row; uses the harness of `lock_capture_ui_sim.js` (v2.0.7, port of lock_in+pid_harmonic 2.3.28, 57 checks) |
-| `raw_trigger_sim.js` | `node test/raw_trigger_sim.js [index.html]` | the scope trigger level in Raw Mode (ADC counts): `[RAW TRIGGER]` block, Level field, Raw Mode button, Config → load, code checks of the page and of `src/` (v2.0.8, port of lock_in+pid_harmonic 2.3.29, 45 checks; v2.0.9: half counts rounded as the controller and AUTO code checks, 53 checks) |
+| `raw_trigger_sim.js` | `node test/raw_trigger_sim.js [index.html]` | the scope trigger level in Raw Mode (ADC counts): `[RAW TRIGGER]` block, Level field, Raw Mode button, Config → load, code checks of the page and of `src/` (v2.0.8, port of lock_in+pid_harmonic 2.3.29, 45 checks; v2.0.9: half counts rounded as the controller and AUTO code checks, 53 checks; v2.0.12: volts of the Level field rounded with `trigLevelDecimals()`, 58 checks) |
 | `ramp_ui_sim.js` | `node test/ramp_ui_sim.js [index.html]` | the `[RAMP CALC]` / `[RAMP UI]` blocks of the page (v2.0.10, 73 checks; it takes `sqPeriodCycles()` where the harmonic App has `modPeriodCycles()`): cycle model of `gen_ramp.v` (period and value after the scan floor, triangle / sawtooth, both directions; the triangle rises after the floor in both directions), f → step (nearest frequency, float32 steps, limits), amplitude / offset round trip and clamps, parsers, wheel targets (1/10/100/1000 Hz, minimum move), zoom → limits (rising half of the triangle), UI flows (tabs, no drift on amplitude changes, sawtooth, Lock osc. screen on / zoom / follow / slow scan / capture / off / Single), *Ramp period* in s / ms, clamp, "-0 mV", half window, no tooltips, box of the tabs, tolerance $10^{-4}$ of the window. Reads the localStorage key from the page |
 | `forcex_race_sim.js` | `node test/forcex_race_sim.js [index.html] [--old]` | the `[FORCEX]` block (v2.0.10, v2.0.11; from `lock_in+pid_plus` 2.2.0-rc4 / 2.2.1): harness of `lock_capture_ui_sim.js` with the real `sendParams()` / `doGetData()` / `loadParams()` / `resetZoom()` / `postParamsChunks()` and a model of the time range code of `src/main.c` (since v2.0.11 it follows `main.c`: `forcex_state`, ratio 0.03, `FORCEX_STALE_MS` 1500 ms, `GUI_XMIN` / `GUI_XMAX` compared as float32, POST without a window; GET answers carry the server params of when they started). Cases 1-4 (v2.0.10): 2nd Reset zoom at 25 moments of the polling, wheel zoom from t = 0 at 25 moments, forceX of another client, forceX of the POST answer. Case 5 (v2.0.11): the POST of the 1st click times out (nginx hung 2.5 s) and is retried, the 2nd click comes during the wait, 12 runs (timed-out POST lost / served at the end of the hang / plus a GET in the new units), the retry goes without `xmin` / `xmax`, kp changed during the wait, also back to the old value. Case 6 (v2.0.11, 2nd round): the POST is served at once and only its answer is lost (hook `__serve = true` of the board test), from s and from µs, 2nd click at 100 / 350 / 1000 / 1900 ms with 1 lost answer and at 2300 / 3000 ms with 2, plus 2 runs not served (16 runs); no units on the other side of ms, at most 12 POSTs per run. Case 7: a zoom 100× smaller right after a forceX, ignored by the server and sent again after `forcex_hold_ms`. **19 checks**, 19/19; `--old` on the first round of v2.0.11 fails 6b, 6c and 7b (with the sim of the first round, `--old` on v2.0.10 failed 5c and 5e) |
+| `calib_test.c` | `gcc -Wall -Werror -Isrc -o /tmp/calib_test test/calib_test.c src/calib.c src/fpga.c -lm && /tmp/calib_test [dir]` | the calibration reader of `src/calib.c` (v2.0.12, same test as lock_in+pid 2.2.17) on EEPROM images built from real dumps (Gen2 Pro v2.0 format 6, RP2 format 1) and on garbage / corrupt images: full scales, offsets (LV / HV, sign), DAC full scale from `hw_rev`, factory zone and nominal fall-backs, and the scope volts equal to the official formula (38 checks) |
+| `calib_display_sim.js` | `node test/calib_display_sim.js [index.html]` (needs `gcc`) | the `[CALIB DISPLAY]` block of the page (v2.0.12): scales of in1 / in2, in1-in2, lock-in displays (by the *Lock-in input*), ctrl_A / ctrl_B, out1 / out2 and the nominal signals with no calibration, Gen1 (RP2) and Gen2 values, HV, mixed ranges, probe, routing of Out1 / Out2 and PID inputs; 800 random cases compared with `src/sig_scale.h` (`test/sig_scale_dump.c` compiled with gcc), in both positions of the switch of the PID inputs (and the switch in the same position in the page and the C); unit parsers; the real label functions (ramp, PID set point, level trigger) with Raw Mode on / off; units rule; static checks of the C (Raw Measure without offset, `calib_*` params, `PARAMS_NUM` 215) (49 checks) |
+| `disp_labels_sim.js` | `node test/disp_labels_sim.js [index.html]` | titles of the lock-in displays (sqX, sqY, R, ϕ, sqF) with Raw Mode on / off / on / off through the real `display_update()` (v2.0.12, bug 10 of lock_in+pid 2.2.17-36: they stayed `X [int]` after Raw Mode off; v2.0.11 fails 4 of 7) |
 | `trig_level_test.c` | `gcc -Wall -Werror -Isrc -o /tmp/trig_level_test test/trig_level_test.c src/fpga.c -lm && /tmp/trig_level_test` | `osc_fpga_cnv_cnt_to_trig_v()` is the inverse of `osc_fpga_cnv_v_to_cnt()` for every 14-bit level (real `src/fpga.c`, v2.0.8); levels with a fraction rounded as the page, Math.round (v2.0.9) |
 
 `minor_ui_sim.js` (`node test/minor_ui_sim.js`) checks small details of the page (labels of this App).
@@ -390,12 +399,17 @@ On the board the reference test is the LOCK MODE procedure of `test_files/lock_t
 off (`dummy_lpf_on` = 0) on the other board ([Usage.md](Usage.md#5-working-at-3125-mhz)); with that filter off the
 50 kHz configuration (error sqYo) no longer fits (the response at 50 kHz moves to sqXo).
 
+v2.0.12 (CHANGELOG, `devAgent.md` 2026-11-26): all node sims pass (`calib_display_sim` 49/49, `disp_labels_sim` 7/7,
+`raw_trigger_sim` 58/58, the others as in v2.0.11; `trig_from_graph_sim` NEW 0 failed, OLD 3 failed is the old
+reference); `calib_test` 38/38, `trig_level_test` ALL PASS, `auto_set_c_sim` 76 OK / 0 FAIL; xsim sims of the FPGA unchanged
+(PASS). Not tested on a board yet (guide: `reportes/lock-in_pid_sq/2026-11-26_v2012_guia_prueba_calib.md`, Apps folder).
+
 ## Installing on the board
 
 From a package (`archive/*.tar.gz` or `.zip`, or a GitHub release):
 
 ```bash
-tar -xzf lock_in+pid_square-2.0.11-<build>-devbuild.tar.gz
+tar -xzf lock_in+pid_square-2.0.12-<build>-devbuild.tar.gz
 ./upload_app.sh rp-XXXXXX.local          # -p <ssh port>; -w uploads only index.html, js, css
 ```
 
@@ -435,6 +449,8 @@ Notes for Ecosystem 2.0 (`testAgent.md`):
 - Numbering: the major 2 is the Ecosystem 2.0 version, as lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x and
   lock_in+pid_harmonic2 2.4.x; minor and patch start again because this is a new App. There is no version for the
   0.9x / 1.0 ecosystems.
+- Package of v2.0.12: `archive/lock_in+pid_square-2.0.12-22-devbuild.{zip,tar.gz}` (tar.gz md5 `ef97b999…`, zip `0739251e…`; `controllerhf.so` `416a6bd6…`), with the same
+  `fpga.bit.bin` (`8a282975…`) and `red_pitaya.bit` (`ef046e2e…`) as v2.0.11: the C controller and the web page changed.
 - Package name: `lock_in+pid_square-<VER>-<BUILD_NUMBER>-<REVISION>.{zip,tar.gz}` in `archive/`
   (`lock_in+pid_square-2.0.11-21-devbuild.*`, tar.gz md5 `af796490…`, the build of the second round; v2.0.10:
   `-2.0.10-20-devbuild`: the same `fpga.bit.bin` (`8a282975…`) as v2.0.3 … v2.0.9, only the web page and the rebuilt

@@ -20,7 +20,7 @@ loop, controlled from a web page or remotely over HTTP.
 
 ## Version 2.0.x (Ecosystem 2.0)
 
-Current version: **2.0.11** (branch `master`; package `archive/lock_in+pid_square-2.0.11-21-devbuild`). The major number 2 marks, as in the 2.x series of the other Apps
+Current version: **2.0.12** (branch `master`; package `archive/lock_in+pid_square-2.0.12-22-devbuild`). The major number 2 marks, as in the 2.x series of the other Apps
 (lock_in+pid 2.2.x, lock_in+pid_harmonic 2.3.x, lock_in+pid_harmonic2 2.4.x), the version for the Red Pitaya
 **Ecosystem 2.0** (e.g. `RedPitaya_OS_2.04`), with the FPGA built in Vivado 2020.1 (project structure of
 [RedPitaya-FPGA](https://github.com/RedPitaya/RedPitaya-FPGA)). There is no version for the 0.9x / 1.0 ecosystems.
@@ -75,6 +75,16 @@ Current version: **2.0.11** (branch `master`; package `archive/lock_in+pid_squar
   hang): the answer of that POST no longer brings back the old window (*Force X*); a value changed back during a slow POST
   is no longer lost; the page checks that the server took the window it sent and sends it again if not. Web page only;
   tested on RP2 (PASS). See [doc/Structure.md](doc/Structure.md#time-window-of-the-plot-and-force-x).
+- 2.0.12 (from lock_in+pid_harmonic 2.3.33 = lock_in+pid 2.2.17): **calibration of the EEPROM in the universal format**
+  (5 / 6: every STEMlab 125-14 **Gen2**, and Gen1 boards recalibrated with the OS 2.x calibration App): before, IN1 read
+  a constant > 30 V and IN2 ~0 V on those boards. The old format 1 is read as before, the user zone and, if it is not
+  valid, the factory zone; out-of-range values give nominal ones and a warning next to the title of the page. The ADC
+  offset is subtracted, as the official library (it was added), and the LV range uses its own offset; on Gen2 the DAC
+  full scale is 2 V. With Raw Mode off the volts shown use the calibration (in1 / in2 their input, in1-in2 the mean,
+  sqX, sqY, R, sqF the *Lock-in input*, ctrl_A / ctrl_B and out1 / out2 the DAC, everything else nominal 8192 counts =
+  1 V); Raw Mode shows the plain integers everywhere
+  ([doc/Usage.md](doc/Usage.md#volts-in-the-display-calibration-v2012)). Lock-in display titles back after Raw Mode
+  off. Same FPGA; not tested on a board yet. See the [CHANGELOG](CHANGELOG.md).
 
 ![Ramp Controller of v2.0.10: tab freq (100 Hz triangle, Amp. p-p 8000) and Lock osc. screen: the scope on Scan floor with the window 0 … T/2, the rise of Ramp A (red)](.README/ramp_controller_lock_osc_screen_v2.0.10.jpg)
 

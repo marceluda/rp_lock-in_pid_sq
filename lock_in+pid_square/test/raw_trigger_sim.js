@@ -73,7 +73,15 @@ check('1.3 probe x10 on CH1, source CH2: scale of CH2 (1)', near(F('pageToTrigLe
 check('1.4 limits +-gui_reset_y_range/2', JSON.stringify(F('trigLevelLimits')(V)) == JSON.stringify([-1.0835, 1.0835]), F('trigLevelLimits')(V));
 check('1.5 the limits of the server values (2nd argument) win', F('trigLevelLimits')(V, V10)[1] == 10.835);
 check('1.6 beyond the full scale: limited before sending (5 V -> 1.0835)', near(F('pageToTrigLevel')(5, V, V), 1.0835));
-check('1.7 the field shows the value as before (no rounding in volts)', F('trigLevelText')(0.000244140625, V) === 0.000244140625);
+// v2.0.12 (lock_in+pid 2.2.17 build 36): rounded to one decimal more than an ADC count needs (it showed 0,249999689324)
+check('1.7 the field rounds the volts: 0.249999689324 -> 0.25, 0.000244140625 -> 0.00024 (5 decimals at +-1.08 V)',
+      F('trigLevelText')(0.249999689324, V) === 0.25 && F('trigLevelText')(0.000244140625, V) === 0.00024,
+      [F('trigLevelText')(0.249999689324, V), F('trigLevelText')(0.000244140625, V)].join(' '));
+check('1.8 probe x10 (+-10.8 V): 4 decimals (0.0249999689 * 10 -> 0.25, 0.12345678 * 10 -> 1.2346)',
+      F('trigLevelText')(0.0249999689, V10) === 0.25 && F('trigLevelText')(0.12345678, V10) === 1.2346,
+      [F('trigLevelText')(0.0249999689, V10), F('trigLevelText')(0.12345678, V10)].join(' '));
+check('1.9 no server values: 1 V full scale (5 decimals); Raw: whole counts as before',
+      F('trigLevelText')(0.123456789, {}) === 0.12346 && F('trigLevelText')(12.5, R) === 13);
 
 console.log('--- 2. Raw Mode: ADC counts as they are');
 check('2.1 page 100 counts -> trig_level 100 -> page 100 (before: 100 / scale, limited to +-1)',
@@ -126,6 +134,11 @@ function levelField(local, original, text) {
   check('4.5 volts, probe x10: typing 2.5 V -> trig_level 0.25', near(r.level, 0.25), JSON.stringify(r));
   r = guard(() => levelField(Object.assign({}, R, { trig_level: 77 }), V, 'abc'));
   check('4.6 Raw: not a number -> the field shows the level again (77), nothing sent', r.shown === '77' && r.sent === 0, JSON.stringify(r));
+  // v2.0.12 (lock_in+pid 2.2.17 build 36): the field shows the rounded level; leaving it untouched keeps the level as it is
+  r = guard(() => levelField(Object.assign({}, V, { trig_level: 0.249999689324 }), V, '0.25'));
+  check('4.7 volts: the field shows 0.25 for 0.249999689324; blur with the same text keeps 0.249999689324', r.level === 0.249999689324 && parseFloat(r.shown.replace(',', '.')) === 0.25, JSON.stringify(r));
+  r = guard(() => levelField(Object.assign({}, V, { trig_level: 0.249999689324 }), V, '0.3'));
+  check('4.8 volts: another value typed (0.3) -> trig_level 0.3', r.level === 0.3 && parseFloat(r.shown.replace(',', '.')) === 0.3, JSON.stringify(r));
 }
 
 // ---- the Raw Mode button (real click handler) ---------------------------------------------------------------------
@@ -208,6 +221,8 @@ check('7.1 no "trig_level * scale" / "/ scale" conversion of the level left', !/
 check('7.2 updateTriggerSlider(): limits from trigLevelLimits(), level from trigLevelToPage(), whole counts in the field',
       /trigLevelLimits\(params\.local, params\.original\)/.test(fnSrc('updateTriggerSlider')) && /trigLevelToPage\(/.test(fnSrc('updateTriggerSlider')) &&
       /trigRaw\(params\.local\) \? Math\.round\(tlev\)/.test(fnSrc('updateTriggerSlider')));
+check('7.2b updateTriggerSlider(): volts rounded with trigLevelDecimals() as the Level field (build 36: 0,249999689324 before)',
+      /tlev\.toFixed\(trigLevelDecimals\(params\.local\)\)/.test(fnSrc('updateTriggerSlider')));
 check('7.3 trigger line of the plot (addTriggerDataSet) in page units', /trigLevelToPage\(params\.local\.trig_level, params\.local\)/.test(fnSrc('addTriggerDataSet')));
 check('7.4 end of the slider drag (mouseUpOut) through pageToTrigLevel() with the server limits', /pageToTrigLevel\([\s\S]*params\.original\)/.test(fnSrc('mouseUpOut')));
 check('7.5 drag tooltip in whole counts in Raw Mode', /trigRaw\(params\.local\)/.test(fnSrc('mouseDownMove')));

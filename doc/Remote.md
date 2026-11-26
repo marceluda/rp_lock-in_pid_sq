@@ -365,6 +365,20 @@ this App (`control_finn.py` l. 1205-1415):
 | `rp.lock_launch(timeout=None)`, `rp.lock_now()`, `rp.lock_release()` | Trigger Lock (0→1 edge of bit 1; with `timeout` it waits for LOCKED) / Lock Now / release |
 | `rp.lock_status()`, `rp.wait_locked(timeout=10)`, `rp.get_lock_control()` | decoded `lock_status` (armed, locked, enables, count) / wait for LOCKED (`AcquisitionTimeout`) / decoded `lock_control` |
 
+**Calibration (v2.0.12):** `control_finn.py` was not changed. `rp.calib` parses `calib -rv` with the field names of
+the old format 1; `curv(raw=False)` converts in1 / in2 with `(raw + FE_CHX_DC_offs) · FE_CHX_FS_G_HI` (the LV full
+scale with the HV offset, **added**, whatever the range) and `get_XY(units='V')` takes `FE_CHX_FS_G_HI` of the lock-in
+input (as the page, but always the LV one). The App (since v2.0.12, as lock_in+pid 2.2.17) and the official
+library **subtract** the offset and use the LV offset (`FE_CHX_DC_offs_HI` in `calib -rv`) in LV, the HV full scale in
+HV, and show ctrl_A / ctrl_B / out1 / out2 with the DAC full scale; so with a nonzero offset (RP2: LV +210 / −20 counts)
+or in HV the volts of `control_finn.py` differ from those of the page. On a board with the universal format 5 / 6
+(every STEMlab 125-14 Gen2) `calib -rv` prints other names: `rp.calib` has no `FE_CHX_FS_G_HI` and every signal falls
+back to 8192 counts = 1 V. The page reads the values that the App uses from the read-only parameters `calib_status`,
+`calib_in1_lv` … `calib_out2_offs` of `GET /data`. The SSH version (`control_hugo.py` `get_adc_dac_calib()` /
+`set_adc_dac_calib()`, `example_calibration.py`, if present) has the same limits, and writing the EEPROM (`calib -w`)
+uses format 1 with the sign of the old App: do not do it on a board with format 5 / 6, nor without a backup
+(`calib -rb > backup.bin`).
+
 ### `POST /data` made by each function
 
 Only the scope functions use `POST /data` (one connection each, + 1 per retry when there is no answer); the

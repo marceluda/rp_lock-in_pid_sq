@@ -25,6 +25,7 @@
 #include <sys/time.h>
 
 #include "main.h"
+#include "sig_scale.h"   /* v2.0.12: display scale of the signals */
 #include "version.h"
 #include "worker.h"
 #include "fpga.h"
@@ -434,6 +435,23 @@ static rp_app_params_t rp_main_params[PARAMS_NUM+1] = {
     { "scope_acq_state"               ,      0, 0, 1,            0,            4 },
     { "scope_acq_gen"                 ,      0, 0, 1,           -1,     16777216 },
     { "sig_gen"                       ,      0, 0, 1,           -1,     16777216 },
+    /* v2.0.12: calibration in use (src/calib.h): 0 user zone of the EEPROM, 1 factory zone, 2 nominal values */
+    { "calib_status"                  ,      2, 0, 1,            0,            2 },
+    /* v2.0.12: calibration values for the display of the page (read only, set by rp_get_params()): full scales
+     * [V of 8192 counts] of IN1 / IN2 in LV and HV, ADC offset corrections [counts added] of each, DAC full scales [V]
+     * and DAC offsets [counts, official sign: n = V*8192/FS + offset] of OUT1 / OUT2 */
+    { "calib_in1_lv"                  ,      1, 0, 1,            0,          200 },
+    { "calib_in1_hv"                  ,     20, 0, 1,            0,          200 },
+    { "calib_in2_lv"                  ,      1, 0, 1,            0,          200 },
+    { "calib_in2_hv"                  ,     20, 0, 1,            0,          200 },
+    { "calib_in1_offs_lv"             ,      0, 0, 1,       -10000,        10000 },
+    { "calib_in1_offs_hv"             ,      0, 0, 1,       -10000,        10000 },
+    { "calib_in2_offs_lv"             ,      0, 0, 1,       -10000,        10000 },
+    { "calib_in2_offs_hv"             ,      0, 0, 1,       -10000,        10000 },
+    { "calib_out1_fs"                 ,      1, 0, 1,            0,          200 },
+    { "calib_out2_fs"                 ,      1, 0, 1,            0,          200 },
+    { "calib_out1_offs"               ,      0, 0, 1,       -10000,        10000 },
+    { "calib_out2_offs"               ,      0, 0, 1,       -10000,        10000 },
 
     { /* Must be last! */
         NULL, 0.0, -1, -1, 0.0, 0.0 }
@@ -482,11 +500,9 @@ int rp_app_init(void)
 {
     fprintf(stderr, "Loading scope (with gen+pid+lock extensions) version %s-%s.\n", VERSION_STR, REVISION_STR);
 
-    rp_default_calib_params(&rp_main_calib_params);
-    if(rp_read_calib_params(&rp_main_calib_params) < 0) {
-        fprintf(stderr, "rp_read_calib_params() failed, using default"
-                " parameters\n");
-    }
+    /* v2.0.12 (lock_in+pid 2.2.17): decodes the old and the universal (5 / 6, Gen2 boards) formats; without a valid
+     * calibration it fills nominal values and says so on stderr (one line "Calibration: ..." in any case) */
+    rp_read_calib_params(&rp_main_calib_params);
 
     TRACE("LOLO(rp_app_init): Now: rp_osc_worker_init\n");
 
@@ -828,18 +844,11 @@ int transform_acq_params(rp_app_params_t *p)
 
 void get_scales(rp_app_params_t *p, float *scale1, float *scale2, float *maxv) {
 
-    /* Max ADC for Ch1, Ch2, both combined, normalized & selected */
-    uint32_t fe_fsg1 = (p[GAIN_CH1].value == 0) ?
-            rp_main_calib_params.fe_ch1_fs_g_hi :
-            rp_main_calib_params.fe_ch1_fs_g_lo;
-    float ch1_max_adc_v =
-            osc_fpga_calc_adc_max_v(fe_fsg1, p[PRB_ATT_CH1].value);
-
-    uint32_t fe_fsg2 = (p[GAIN_CH2].value == 0) ?
-            rp_main_calib_params.fe_ch2_fs_g_hi :
-            rp_main_calib_params.fe_ch2_fs_g_lo;
-    float ch2_max_adc_v =
-            osc_fpga_calc_adc_max_v(fe_fsg2, p[PRB_ATT_CH2].value);
+    /* Max V for scope channels A, B (v2.0.12: of the signal each one shows, sig_scale.h, as the worker; it was the
+     * IN1 / IN2 full scale for any signal), both combined, normalized & selected */
+    float ch1_max_adc_v = 1, ch2_max_adc_v = 1;
+    rp_sig_osc_scale(&rp_main_calib_params, p, 0, &ch1_max_adc_v, NULL);
+    rp_sig_osc_scale(&rp_main_calib_params, p, 1, &ch2_max_adc_v, NULL);
 
     float max_adc_norm = osc_fpga_calc_adc_max_v(rp_main_calib_params.fe_ch1_fs_g_hi, 0);
 
@@ -957,6 +966,11 @@ int rp_set_params(rp_app_params_t *p, int len)
              * (when every POST reset the scope), they also update the worker */
             if((p_idx == LOCK_OSCA_SW) || (p_idx == LOCK_OSCB_SW) ||
                (p_idx == LOCK_OSC_RAW_MODE) || (p_idx == LOCK_OSC_LOCKIN_MODE))
+                params_change = 1;
+            /* v2.0.12: the routing of the outputs and the PID inputs choose the scale of the scope signals
+             * (sig_scale.h) */
+            if((p_idx == LOCK_OUT1_SW) || (p_idx == LOCK_OUT2_SW) ||
+               (p_idx == LOCK_PIDA_SW) || (p_idx == LOCK_PIDB_SW))
                 params_change = 1;
             if ( (p_idx >= PARAMS_AWG_PARAMS) && (p_idx < PARAMS_PID_PARAMS) )
                 awg_params_change = 1;
@@ -1275,6 +1289,24 @@ int rp_get_params(rp_app_params_t **p)
         rp_main_params[SCOPE_ACQ_STATE_PARAM].value = (float)acq_state;
         rp_main_params[SCOPE_ACQ_GEN_PARAM  ].value = (float)acq_gen;
         rp_main_params[SIG_GEN_PARAM        ].value = (float)rp_osc_get_signals_gen();
+    }
+    /* v2.0.12: calibration in use (read only; the page warns when it is not the user zone) and its values for the
+     * display of the page (main.h, CALIB_IN1_LV_PARAM ...) */
+    rp_main_params[CALIB_STATUS_PARAM].value = (float)rp_main_calib_params.source;
+    {
+        const rp_calib_params_t *c = &rp_main_calib_params;
+        rp_main_params[CALIB_IN1_LV_PARAM     ].value = (float)rp_sig_fs_v(c->fe_ch1_fs_g_hi);
+        rp_main_params[CALIB_IN1_HV_PARAM     ].value = (float)rp_sig_fs_v(c->fe_ch1_fs_g_lo);
+        rp_main_params[CALIB_IN2_LV_PARAM     ].value = (float)rp_sig_fs_v(c->fe_ch2_fs_g_hi);
+        rp_main_params[CALIB_IN2_HV_PARAM     ].value = (float)rp_sig_fs_v(c->fe_ch2_fs_g_lo);
+        rp_main_params[CALIB_IN1_OFFS_LV_PARAM].value = (float)c->fe_ch1_dc_offs_lv;
+        rp_main_params[CALIB_IN1_OFFS_HV_PARAM].value = (float)c->fe_ch1_dc_offs;
+        rp_main_params[CALIB_IN2_OFFS_LV_PARAM].value = (float)c->fe_ch2_dc_offs_lv;
+        rp_main_params[CALIB_IN2_OFFS_HV_PARAM].value = (float)c->fe_ch2_dc_offs;
+        rp_main_params[CALIB_OUT1_FS_PARAM    ].value = (float)rp_sig_fs_v(c->be_ch1_fs);
+        rp_main_params[CALIB_OUT2_FS_PARAM    ].value = (float)rp_sig_fs_v(c->be_ch2_fs);
+        rp_main_params[CALIB_OUT1_OFFS_PARAM  ].value = (float)c->be_ch1_dc_offs;
+        rp_main_params[CALIB_OUT2_OFFS_PARAM  ].value = (float)c->be_ch2_dc_offs;
     }
     for(i = 0; i < PARAMS_NUM; i++) {
         int p_strlen = strlen(rp_main_params[i].name);
