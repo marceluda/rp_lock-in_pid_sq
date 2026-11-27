@@ -99,6 +99,20 @@ format-1 names of `calib -rv`, see doc/Remote.md); the AWG of `generate.c` is no
   other node sims and the xsim sims pass.
 - `controllerhf.so` rebuilt; FPGA unchanged. Package `lock_in+pid_square-2.0.12-22-devbuild`. Not tested on a board.
 
+### v2.0.12, 2nd commit (2026-11-26) - bug 11: no exponential notation in the lock-in displays (web page only)
+
+- FIXED **bug 11** (found by testAgent in the board test of `lock_in+pid_harmonic` 2.3.33-75): with *Lock-in input*
+  in2 and *Channel 2* HV the display F2 = 97 counts read `1.2e+2 uV`. `display_update()` gives `format_oom()` the
+  number of digits of the integer of the FPGA (`String(lock_F2).length`) as the precision of `toPrecision()`; with the
+  scale of HV ($\times 20$), of a probe ($\times 10$) or after the change of prefix, the value has more digits in its
+  integer part than that and `toPrecision()` switched to exponential notation (also at a decade: 99.96 with precision 2
+  gave `1.0e+2`). `format_oom()` now uses at least the digits of the integer part (115.7 µV → `116 uV`), also when the
+  rounding reaches the next decade (99.96 → `100`) or 1000 (next prefix: 999.96 µV → `1.00 mV`), shows `---` for a value
+  that is not finite and keeps the prefixes in p … T. The same function serves every lock-in display of the page
+  (sqX, sqY, sqR, sqϕ, sqF) and the times of the lock capture: no label uses exponential notation any more. Web page only.
+- Tests: `disp_labels_sim` 10/10 (new 11.1-11.3: the real `format_oom()` of the page, the case of the board, a sweep of 331 integers × 2 signs × 12 scales through the real `display_update()`; the page before this fix fails 2 of them); the other tests unchanged and passing.
+- `controllerhf.so` rebuilt; FPGA unchanged. Package `lock_in+pid_square-2.0.12-23-devbuild`. Not tested on a board.
+
 ## v2.0.11 - 2026-11-13 - Force X of a retried POST: the 2nd click of Reset Zoom is no longer lost (web page only, no FPGA / C change; from lock_in+pid_plus 2.2.1)
 
 Port of the fix of `rp_lock-in_pid_plus` v2.2.1 (`a8d4b0b`; see its CHANGELOG). Only `index.html` and

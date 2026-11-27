@@ -596,6 +596,8 @@ controller, `src/sig_scale.h`, for the traces, the Measure table and the scope t
 - **PID inputs in1 / in2 / in1-in2:** nominal, as lock_in+pid and lock_in+pid_harmonic (lock_in+pid_plus uses the input
   calibration there). This is a pending decision of the user, kept as a one-line switch (`RP_SIG_PID_IN_CALIB` in
   `src/sig_scale.h` and `calib_pid_in_calib` in `[CALIB DISPLAY]`, changed together).
+- **Number format of the lock-in displays** (v2.0.12, 2nd commit): plain decimals with an SI prefix, with at least the digits of the
+  integer part (`116 uV`); never exponential notation (bug 11: with in2 in HV a display read `1.2e+2 uV`).
 - **Labels of the page:** Ramp hig / low lim, mVpp and mVdc, the *freq* tab (Amp. p-p, Offset, low, high), PID A / B set
   point: nominal; $V_\mathrm{trg}$ of the level trigger: scale of its *Signal for trigger* (in1 / in2 / in1-in2
   calibrated, ctrl_A / ctrl_B with the DAC, the others nominal); the lock-in displays: scale of the *Lock-in input*. They are written again

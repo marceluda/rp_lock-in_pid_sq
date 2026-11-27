@@ -2742,11 +2742,27 @@
   }
 
   function format_oom(num,unit="&nbsp;",pre=3){
+      // Bug 11 (testAgent, lock_in+pid_harmonic 2.3.33-75, 2026-11-26): never exponential notation in a label. pre (the
+      // digits of the integer of the FPGA, from display_update()) can be less than the digits of the integer part of the
+      // value: Lock-in input in2 with Channel 2 HV (x20), F2 = 97 counts = 115.7 uV with pre = 2 gave "1.2e+2 uV". Now at
+      // least the digits of the integer part (115.7 -> "116 uV"), also when the rounding reaches the next decade
+      // (99.96 -> "100.0"); not finite: "---"; the prefixes are limited to p .. T.
+      num = Number(num);
+      if(!isFinite(num)) return "---&nbsp;" + unit;
       var oom = num==0 ? 0 : Math.floor(  Math.log10(Math.abs(num))/3) ;
+      oom = Math.max(-4, Math.min(4, oom));
       var val = num/Math.pow(10,3*oom);
-      pre=Math.max(2,pre);
-      var txt = val.toPrecision(pre)+"&nbsp;"+units[oom.toString()] + unit;
-      return txt;
+      pre = Math.max(2, Math.min(21, Math.round(Number(pre)) || 3));
+      // 999.9999 rounds to 1000 (1 kHz: T = 0.99999.. ms gave "1.00e+3 us"): next prefix (lock_in+pid_plus 2.0.0)
+      if(Math.abs(Number(val.toPrecision(pre))) >= 1000 && units[(oom+1).toString()] !== undefined) {
+        oom += 1;
+        val  = num/Math.pow(10,3*oom);
+      }
+      if(val != 0) pre = Math.min(21, Math.max(pre, Math.floor(Math.log10(Math.abs(val))) + 1));
+      var txt = val.toPrecision(pre);
+      while(/e/.test(txt) && pre < 21) txt = val.toPrecision(++pre);
+      if(/e/.test(txt)) txt = (Math.abs(val) < 1 ? 0 : val).toFixed(0);   // (below 1e-18 or above 1e33: not reached)
+      return txt+"&nbsp;"+units[oom.toString()] + unit;
   }
 
   function set_bar(dispname,val) {

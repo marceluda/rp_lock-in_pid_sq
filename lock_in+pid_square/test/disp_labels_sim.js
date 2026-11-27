@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Bug 11 (checks 11.1-11.3, 2026-11-26; testAgent, lock_in+pid_harmonic 2.3.33-75): the real format_oom() of the page
+//   through the real display_update(): no exponential notation in any lock-in display (in2 in HV gave "1.2e+2 uV").
 // v2.0.12 (port of lock_in+pid_harmonic 2.3.33 / lock_in+pid 2.2.17 build 36), bug 10 of lock_in+pid: titles of the lock-in displays after Raw Mode on -> off. The real display_update() of
 // index.html runs with a mocked jQuery, Raw Mode switched on and off several times:
 //   Raw Mode on : "sqX [int]", "sqY [int]", "R [int]", "ϕ [deg]", "sqF [int]" and the values as plain integers
@@ -99,6 +101,69 @@ check('5 on -> off a second time: [int] and back', on2 === 'sqX [int],sqY [int],
       r.labels.join() === 'sqX,sqY,R,ϕ,sqF', on2 + ' | ' + r.labels.join());
 check('6 static: display_update() does not read #btn_disp_units (no such button in the page)',
       !/btn_disp_units/.test(fnSrc('display_update').replace(/\/\/.*$/gm, '')));
+
+// ---- bug 11 (testAgent, lock_in+pid_harmonic 2.3.33-75, 2026-11-26): no exponential notation in the lock-in displays
+// The real format_oom() and units of the page (the checks above use a stub) through the real display_update(). Lock-in
+// input in2 with Channel 2 HV (x20): F2 = 97 counts = 115.7 uV gave "1.2e+2 uV" (format_oom() got pre = 2, the digits
+// of the integer 97, and toPrecision(2) of 115.7 is exponential).
+{
+  console.log('--- bug 11: real format_oom(), no exponential notation');
+  const um = js.match(/var\s+units\s*=\s*\{[^}]*\}\s*;/);
+  const c2 = { $, console: { log() {} }, params: { local: {} }, set_bar() {}, lia_pll_display() {} };
+  vm.createContext(c2);
+  vm.runInContext((um ? um[0] : '') + '\n' + blockSrc('CALIB DISPLAY') + '\n' + fnSrc('toFixedNz') + '\n' + fnSrc('display_val') + '\n' +
+                  fnSrc('format_oom') + '\n' + fnSrc('display_update') + '\n' + glob +
+                  '\nlasttsp = 0; fixn = 0;\nthis.__get = function(e){return eval(e)};', c2);
+  const fo = c2.__get('format_oom'), upd2 = c2.__get('display_update');
+  const expo = s => /[0-9]e[-+]?[0-9]/i.test(s) || /NaN|undefined|Infinity/.test(s);
+  const d = fnSrc('display_update');
+  const keys = [...new Set([...d.matchAll(/display_val\('(lock_[A-Za-z0-9_]+)'\)/g)].map(m => m[1]))]
+               .filter(k => !/^lock_(error_|stream_)/.test(k));
+  const dispIds = () => Object.keys(el).filter(s => /^#disp_/.test(s) && !/^#disp_(error_|stream_)/.test(s));
+  function run(vals, extra) {
+    for(const s of dispIds()) el[s].html = '';
+    E('#lock_osc_raw_mode').data.checked = false;
+    c2.params.local = Object.assign({ lock_error_mean: 0, lock_error_std: 0, lock_osc_raw_mode: 0 }, vals, extra);
+    upd2();
+    const out = {};
+    for(const s of dispIds()) if(el[s].html !== '') out[s] = el[s].html;
+    return out;
+  }
+  const f1 = fo(97 * 20 / 2047 / 8192, 'V', 2), f2 = fo(-115.7e-6, 'V', 2), f3 = fo(99.96e-6, 'V', 2), f4 = fo(999.96e-6, 'V', 3),
+        f5 = fo(0.5, 'V', 3), f6 = fo(NaN, 'V', 3), f7 = fo(0, 'V', 2), f8 = fo(99.97, 'deg');
+  check('11.1 format_oom(): 97 counts x20 (115.7 uV, pre 2) -> "116 uV", -115.7 uV -> "-116 uV", 99.96 uV (pre 2) -> "100 uV", ' +
+        '999.96 uV (pre 3) -> "1.00 mV", 0.5 V -> "500 mV", 0 -> "0.0", 99.97 deg -> "100 deg", NaN -> "---"',
+        f1 === '116&nbsp;uV' && f2 === '-116&nbsp;uV' && f3 === '100&nbsp;uV' && f4 === '1.00&nbsp;mV' && f5 === '500&nbsp;mV' &&
+        f7 === '0.0&nbsp;&nbsp;V' && f8 === '100&nbsp;&nbsp;deg' && /^---/.test(f6), [f1, f2, f3, f4, f5, f6, f7, f8].join(' | '));
+  // the case of the board: every lock-in register = 97, Lock-in input in2, Channel 2 HV
+  const v97 = {};
+  for(const k of keys) v97[k] = 97;
+  const o97 = run(v97, { lock_signal_sw: 1, gain_ch2: 1 });
+  const ids97 = Object.keys(o97);
+  const plain = s => /^-?[0-9]+(\.[0-9]+)?&nbsp;/.test(s);
+  check('11.2 display_update(), Lock-in input in2 + Channel 2 HV, all registers 97: every label a plain decimal number, no exponential (' + keys.join(', ') + ')',
+        ids97.length >= 4 && ids97.every(s => plain(o97[s]) && !expo(o97[s])),
+        ids97.map(s => s.slice(6) + '=' + o97[s].replace(/&nbsp;/g, ' ')).join(', '));
+  // sweep: integers of 1 .. 2^27 digits, both signs, scales x1 (LV), x20 (HV), x200 (HV, probe x10), nominal (other
+  // lock-in input), in1 / in2 / in1-in2
+  const ints = [1, 2, 5, 9, 10, 11, 42, 97, 99, 100, 101, 409, 410, 999, 1000, 1001, 4095, 4096, 9999, 10000, 12345, 99999,
+                100000, 409500, 999999, 1000000, 2047 * 8192, 9999999, 2047 * 8192 * 4, 99999999, 134217727];
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for(let i = 0; i < 300; i++) ints.push(Math.round(Math.pow(10, rnd() * 8.1)));
+  const setups = [];
+  for(const sw of [0, 1, 2, 3]) for(const g of [[0, 0], [1, 0], [1, 1]])
+    setups.push({ lock_signal_sw: sw, lock_signal2_sw: sw, lock_signal_sw_2: sw, gain_ch1: g[0], gain_ch2: g[0], prb_att_ch1: g[1], prb_att_ch2: g[1] });
+  let nlab = 0, bad = [];
+  for(const st of setups) for(const n of ints) for(const sg of [1, -1]) {
+    const vals = {};
+    keys.forEach((k, j) => { vals[k] = sg * (j % 2 ? n : Math.max(1, Math.round(n / (j + 1)))); });
+    const o = run(vals, st);
+    for(const s in o) { nlab++; if((expo(o[s]) || !plain(o[s])) && bad.length < 5) bad.push(s + '=' + o[s] + ' (n ' + sg * n + ', ' + JSON.stringify(st) + ')'); }
+  }
+  check('11.3 sweep of ' + ints.length + ' integers x 2 signs x ' + setups.length + ' scales (LV, HV, HV x10 probe; in1 / in2 / in1-in2 / ' +
+        'nominal): ' + nlab + ' labels, none exponential / NaN', nlab > 1000 && bad.length === 0, bad.join('; '));
+}
 
 console.log('=== ' + nchk + ' checks, ' + nfail + ' failed ===');
 process.exit(nfail ? 1 : 0);
